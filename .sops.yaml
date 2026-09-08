@@ -1,0 +1,10 @@
+# Which files sops encrypts, and to whom.
+#
+# Only the *values* are encrypted — keys and structure stay readable so manifests
+# remain diffable and reviewable. The public key below is safe to commit; the matching
+# private key lives in the cluster (Secret sops-age in flux-system) and in a password
+# manager. Losing it makes everything here unreadable.
+creation_rules:
+  - path_regex: .*\.sops\.ya?ml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq

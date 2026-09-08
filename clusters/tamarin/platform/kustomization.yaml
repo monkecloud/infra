@@ -5,8 +5,7 @@ resources:
   - garage.yaml
   - kube-vip.yaml       # control-plane VIP 192.168.2.201
   - kube-router.yaml    # NetworkPolicy enforcement — tenant isolation depends on this
-  # Tailscale operator + its OAuth credentials. Commented out until the OAuth client
-  # exists: `wait: true` on this Kustomization means an operator that cannot authenticate
-  # would hold back platform-config and workloads too. See scripts/tailscale-oauth.sh.
-  # - tailscale.yaml
-  # - tailscale--operator-oauth.sops.yaml
+  # Tailscale operator + its OAuth credentials. Remote access for off-LAN admin work;
+  # the subnet routers themselves are in platform-config, which needs these CRDs first.
+  - tailscale.yaml
+  - tailscale--operator-oauth.sops.yaml

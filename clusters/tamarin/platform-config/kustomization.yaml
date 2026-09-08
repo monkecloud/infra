@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - metallb-config.yaml       # ingress VIP pool 192.168.2.200, autoAssign false
+  - cert-manager-issuer.yaml  # letsencrypt-prod
+  - traefik-config.yaml       # HelmChartConfig: 2 replicas, VIP, retry middleware

@@ -1,0 +1,160 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: garage
+  name: garage
+spec:
+  finalizers:
+  - kubernetes
+---
+apiVersion: v1
+data:
+  garage.toml: "metadata_dir = \"/var/lib/garage/meta\"\ndata_dir = \"/var/lib/garage/data\"\ndb_engine = \"sqlite\"\nreplication_factor = 3\nrpc_bind_addr = \"[::]:3901\"\nrpc_secret = \"76e09ddb00c0c586d112fdfd6393be3760d5702954074c8477f66d6d226255b8\"\
+    \nbootstrap_peers = [\n  \"garage-0.garage-rpc.garage.svc.cluster.local:3901\",\n  \"garage-1.garage-rpc.garage.svc.cluster.local:3901\",\n  \"garage-2.garage-rpc.garage.svc.cluster.local:3901\",\n\
+    \  \"garage-3.garage-rpc.garage.svc.cluster.local:3901\",\n]\n\n[s3_api]\ns3_region = \"garage\"\napi_bind_addr = \"[::]:3900\"\nroot_domain = \".s3.garage.local\"\n\n[s3_web]\nbind_addr = \"[::]:3902\"\
+    \nroot_domain = \".web.garage.local\"\nindex = \"index.html\""
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: garage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage-rpc
+  namespace: garage
+spec:
+  internalTrafficPolicy: Cluster
+  ports:
+  - name: rpc
+    port: 3901
+    protocol: TCP
+    targetPort: 3901
+  selector:
+    app: garage
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage-s3-api
+  namespace: garage
+spec:
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ports:
+  - name: s3-api
+    nodePort: 30390
+    port: 3900
+    protocol: TCP
+    targetPort: 3900
+  selector:
+    app: garage
+  sessionAffinity: None
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  namespace: garage
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: Parallel
+  replicas: 4
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: garage
+  serviceName: garage-rpc
+  template:
+    metadata:
+      labels:
+        app: garage
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: garage
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - image: dxflrs/garage:v2.2.0
+        imagePullPolicy: IfNotPresent
+        name: garage
+        ports:
+        - containerPort: 3900
+          name: s3-api
+          protocol: TCP
+        - containerPort: 3901
+          name: rpc
+          protocol: TCP
+        - containerPort: 3902
+          name: web-api
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/garage/meta
+          name: meta
+        - mountPath: /var/lib/garage/data
+          name: data
+        - mountPath: /etc/garage.toml
+          name: config
+          subPath: garage.toml
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: garage-config
+        name: config
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: meta
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+      storageClassName: local-path
+      volumeMode: Filesystem
+    status:
+      phase: Pending
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+      storageClassName: local-path
+      volumeMode: Filesystem
+    status:
+      phase: Pending

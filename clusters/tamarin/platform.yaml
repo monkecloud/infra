@@ -1,0 +1,46 @@
+# Platform, in two stages.
+#
+# Stage 1 installs the operators; stage 2 applies resources that use the CRDs those
+# operators bring with them (ClusterIssuer, IPAddressPool). Flux would eventually
+# converge either way by retrying, but dependsOn makes the ordering explicit and stops
+# a fresh cluster spending several reconcile cycles in a failed state.
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/tamarin/platform
+  prune: true
+  wait: true
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-config
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform
+  interval: 10m
+  path: ./clusters/tamarin/platform-config
+  prune: true
+  wait: true
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

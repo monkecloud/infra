@@ -1,0 +1,55 @@
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  annotations:
+    helmcharts.cattle.io/managed-by: helm-controller
+  finalizers:
+  - wrangler.cattle.io/on-helm-chart-remove
+  name: cert-manager
+  namespace: kube-system
+spec:
+  chart: cert-manager
+  createNamespace: true
+  driver: secret
+  failurePolicy: reinstall
+  repo: https://charts.jetstack.io
+  targetNamespace: cert-manager
+  valuesContent: 'installCRDs: true'
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  annotations:
+    helmcharts.cattle.io/managed-by: helm-controller
+  finalizers:
+  - wrangler.cattle.io/on-helm-chart-remove
+  name: cnpg
+  namespace: kube-system
+spec:
+  chart: cloudnative-pg
+  createNamespace: true
+  driver: secret
+  failurePolicy: reinstall
+  repo: https://cloudnative-pg.github.io/charts
+  targetNamespace: cnpg-system
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  annotations:
+    helmcharts.cattle.io/managed-by: helm-controller
+  finalizers:
+  - wrangler.cattle.io/on-helm-chart-remove
+  name: metallb
+  namespace: kube-system
+spec:
+  chart: metallb
+  createNamespace: true
+  driver: secret
+  failurePolicy: reinstall
+  repo: https://metallb.github.io/metallb
+  targetNamespace: metallb-system
+  valuesContent: "# L2/ARP mode only - no BGP peer here, so the FRR backend is dead weight\n# (4 nodes x 5 containers). Re-enable if the gateway ever speaks BGP.\nfrrk8s:\n  enabled: false\nspeaker:\n \
+    \ frr:\n    enabled: false"
+  version: 0.16.1

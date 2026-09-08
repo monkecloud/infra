@@ -1,0 +1,12 @@
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  failurePolicy: reinstall
+  valuesContent: "deployment:\n  replicas: 2\naffinity:\n  podAntiAffinity:\n    requiredDuringSchedulingIgnoredDuringExecution:\n      - labelSelector:\n          matchLabels:\n            app.kubernetes.io/name:\
+    \ traefik\n        topologyKey: kubernetes.io/hostname\nservice:\n  annotations:\n    metallb.universe.tf/address-pool: ingress-vip\n  spec:\n    # Only nodes running a ready Traefik pod announce the\
+    \ VIP, and\n    # traffic never takes an extra hop to a dead node.\n    externalTrafficPolicy: Local\nadditionalArguments:\n  # Fail fast to a dead backend so the retry happens quickly\n  - \"--serversTransport.forwardingTimeouts.dialTimeout=500ms\"\
+    \n  - \"--entryPoints.websecure.http.middlewares=kube-system-retry@kubernetescrd\"\n  - \"--entryPoints.web.http.middlewares=kube-system-retry@kubernetescrd\""

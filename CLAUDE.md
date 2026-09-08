@@ -612,9 +612,19 @@ A `REBUILD.md` was even written referencing a directory that existed on one mach
   unset. `terraform.tfvars.example` also carried the live XO login; placeholdered.
 - Verified in a clean clone: `terraform init -backend=false && terraform validate` passes,
   `fmt` clean.
-- **`CLAUDE.md` (this file) is still dt2-only** and holds credentials throughout. It is the
-  main knowledge base a fresh Claude Code session would want. Scrubbing the credentials and
-  committing it is the obvious next step; not done.
+- **`CLAUDE.md` (this file) is now in the repo too**, scrubbed of credentials. Only four
+  distinct ones were ever in it. `/home/yarn/infra/CLAUDE.md` is a **symlink** into the clone,
+  so it still auto-loads for sessions rooted there while there is one copy.
+  - Three were regenerated-at-install anyway: the XO login, the pool-wide host root password,
+    and the k3s join token.
+  - The fourth needed real handling. **`registry-auth` stores htpasswd bcrypt hashes, which
+    are one-way** — a rebuild restores the Secret and the registry accepts the old admin
+    password, but nothing can derive it. Tenant passwords are unaffected because each
+    tenant's `registry-creds` holds `base64(user:password)`, which is reversible; nothing
+    pulls as admin, so admin has no `registry-creds`. The plaintext is now vaulted at
+    `secrets/registry--registry-admin-password.sops.yaml`.
+  - **Do not paste a real credential back into this file.** The two homes are
+    regenerated-at-install, or SOPS-encrypted in this repo.
 
 ### Terraform trimmed — 2026-09-08
 `terraform/20-platform/`, `terraform/30-workloads/` and `terraform/modules/` were **deleted**;

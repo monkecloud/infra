@@ -1,37 +1,31 @@
-# TEMPLATE — not applied. Copy into a project repo's k8s/ and replace APP with the
-# project's name, then add it to that repo's kustomization.
+# An optional cache for this repo. Not applied until you uncomment it in kustomization.yaml.
 #
-# A cache is per-repo, not per-namespace: every project that wants one ships this file.
-# Several projects share a namespace, so every name here is prefixed with the project
-# name — two repos in one namespace must not collide on `redis`.
+# A cache belongs to the repo that wants it — nothing is provisioned for you, and each repo
+# that needs one ships its own. Names are prefixed with the app so two repos deploying into
+# related namespaces never collide.
 #
 # It is best-effort by design: one pod, one node, a local-path PVC. It survives a pod
-# restart, is unavailable while its node is down, and is GONE if that node is lost.
-# Nothing here is backed up or replicated. Use it as a cache, a lock, a rate limiter, or
-# a queue you can rebuild — anything durable belongs in Postgres or Garage.
+# restart, is unavailable while its node is down, and is GONE if that node is lost. Nothing
+# here is backed up or replicated. Cache, lock, rate limiter, or a queue you can rebuild —
+# anything durable belongs in Postgres or the bucket.
 #
-# Connection URL: use `default` as the username — `redis://default:<password>@APP-redis:6379/0`.
+# Connection URL: use `default` as the username — `redis://default:<password>@__APP__-redis:6379/0`.
 # The `redis://:<password>@...` form sends an empty username and a `requirepass`-only server
 # rejects it with `WRONGPASS`.
 #
-# The password lives in a Secret named APP-redis, key `password`. Either commit it
-# SOPS-encrypted in the project repo (needs the cluster age key), or create it once:
-#
-#   kubectl -n <namespace> create secret generic APP-redis \
-#     --from-literal=password="$(openssl rand -base64 24 | tr -d '/+=')"
-#
-# Regenerating it is safe — restart the StatefulSet and the app afterwards.
+# The password lives in a Secret named __APP__-redis, key `password`. Ask the cluster admin
+# to add it to your namespace — an app repo never carries credentials.
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: APP-redis
+  name: __APP__-redis
   labels:
-    app: APP-redis
+    app: __APP__-redis
 spec:
   type: ClusterIP
   selector:
-    app: APP-redis
+    app: __APP__-redis
   ports:
     - name: redis
       port: 6379
@@ -41,17 +35,17 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: APP-redis
+  name: __APP__-redis
 spec:
-  serviceName: APP-redis
+  serviceName: __APP__-redis
   replicas: 1
   selector:
     matchLabels:
-      app: APP-redis
+      app: __APP__-redis
   template:
     metadata:
       labels:
-        app: APP-redis
+        app: __APP__-redis
     spec:
       # Satisfies the stricter `restricted` Pod Security profile, so this pod admits
       # without warnings. Redis runs fine as its own unprivileged uid; fsGroup is what
@@ -80,7 +74,7 @@ spec:
           env:
             - name: REDIS_PASSWORD
               valueFrom:
-                secretKeyRef: { name: APP-redis, key: password }
+                secretKeyRef: { name: __APP__-redis, key: password }
           ports:
             - name: redis
               containerPort: 6379

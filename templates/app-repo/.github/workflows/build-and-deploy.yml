@@ -1,5 +1,3 @@
-# Drop this into a tenant repo at .github/workflows/build-and-deploy.yml
-#
 # It builds the image, pushes it to GHCR, then writes the new tag back into k8s/.
 # That commit is what Flux notices — the workflow itself never talks to the cluster,
 # which is why no inbound network path is needed.
@@ -7,7 +5,8 @@ name: build and deploy
 
 on:
   push:
-    branches: [master]
+    # prod and dev are branches; each builds its own image and its own tag bump.
+    branches: [main, dev]
     # Do not re-trigger on the tag-bump commit this workflow makes itself.
     paths-ignore:
       - 'k8s/**'

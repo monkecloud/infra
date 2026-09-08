@@ -114,10 +114,9 @@ Two leftovers, deliberately not touched:
     something, it goes into Postgres or the bucket.
   - **Anything non-durable belongs to a repo, not to this layer** (user's rule 2026-09-08).
     A cache — Redis today — is declared by the repo that wants one, in that repo's own
-    `k8s/`, so two repos in the same namespace each get their own and a repo that needs none
-    runs none. This layer provisions no caches at all; `templates/redis.example.yaml` is the
-    copy-paste starting point, and names in it are prefixed with the project name because a
-    namespace holds several projects.
+    `k8s/`, so a repo that needs none runs none and each environment gets its own instance.
+    This layer provisions no caches at all; `templates/app-repo/k8s/redis.yaml` is the
+    starting point, shipped commented out of the app's kustomization.
   - **Such a cache is explicitly best-effort.** A `local-path` PVC with appendonly on
     survives a pod restart, but it is one pod on one node: unavailable while that node is
     down and *gone* if that node is lost. Not replicated, not backed up. It is a cache /
@@ -238,7 +237,7 @@ Give the site's repo an `Ingress` with `cert-manager.io/cluster-issuer: letsencr
 `ingressClassName: traefik`, and a `tls` block naming a Secret. cert-manager creates the
 `Certificate` and fills the Secret in. Two replicas with required pod anti-affinity plus a
 PDB is the house pattern, so losing a node does not take the site down — see
-`tenant-kits/*/repo/k8s/` for a working example, and
+`templates/app-repo/k8s/` for a working example, and
 `clusters/tamarin/apps/README.md` for the Flux side.
 
 ### Gotchas worth keeping
@@ -391,29 +390,38 @@ recreate.
   means a restarted pod silently changes version.
 
 
-## App repo kits — `/home/yarn/infra/tenant-kits/<person>/repo/`
+## App repo scaffold — `templates/app-repo/` + `templates/new-app-repo.sh`
 
-What a friend receives: a repo skeleton, and nothing else. They have no kubeconfig and no LAN
-access, so there is no credential handover any more — the cluster injects credentials as
-environment variables, and they push to GitHub.
+`./templates/new-app-repo.sh <owner> <app> [domain] [dest]` produces a repo that carries its
+own cluster context, so a fresh Claude session in it needs no briefing. This exists because
+this file is only auto-loaded for sessions under `/home/yarn/infra` — an app repo at
+`~/prg/whatever` starts knowing none of it.
 
-- **`repo/CLAUDE.md`** — ambient facts only: service endpoints, env var names, the
-  stateless rule, PSA baseline, egress limits, quota. Always loaded, no credential values.
-- **`repo/.claude/skills/deploy/`** and **`.../troubleshoot/`** — procedures, loaded on demand
-  so they cost nothing while writing ordinary app code. `troubleshoot` is keyed to this
-  cluster's real failure modes: **blocked egress presents as a hang, not an error**, PSA
-  rejections look like manifest syntax errors, `local-path` pins a pod to a node,
-  `logs --previous` for crashloops, and `WRONGPASS` from a `redis://:pass@` URL.
-- **`repo/.claude/settings.json`** — allowlists the sanctioned commands so their Claude is not
-  prompted constantly.
-- **`repo/k8s/`** — the manifests Flux applies: `site.yaml` (Deployment + Service + PDB, 2
-  replicas with required anti-affinity), `ingress.yaml`, `deployment.yaml` (a container-image
-  scaffold, commented out until they have an image) and `redis.yaml` (an optional cache, also
-  commented out). `imagePullSecrets: ghcr-creds` is only needed when the GHCR package is
-  private; that Secret does not exist yet.
-- **There is no kit template or generator yet** — `tenant-kits/` holds only the two per-person
-  copies and every change has been hand-applied to both. A `template/` plus a script that
-  substitutes the name is the fix; deferred until CI settles what a kit even contains.
+What the scaffold contains, and why:
+
+- **`CLAUDE.md`** — ambient facts only: the two branches and where each lands, service
+  endpoints, env var names, the stateless rule, PSA baseline, egress limits, quota. Always
+  loaded, **no credential values** — an app repo never holds a secret, because the infra repo
+  applies them into the namespace.
+- **`.claude/skills/{deploy,troubleshoot}/`** — procedures, loaded on demand so they cost
+  nothing while writing ordinary app code. `deploy` is push-based: CI builds and commits the
+  tag, Flux applies it, rollback is `git revert` (a `kubectl rollout undo` would be reverted
+  by the next reconcile). `troubleshoot` is keyed to this cluster's real failure modes —
+  **blocked egress presents as a hang, not an error**, PSA rejections look like manifest
+  syntax errors, `local-path` pins a pod to a node, `logs --previous` for crashloops,
+  `WRONGPASS` from a `redis://:pass@` URL.
+- **`k8s/`** — `site.yaml` (Deployment + Service + PDB, 2 replicas with required
+  anti-affinity), `ingress.yaml`, and `redis.yaml` (an optional cache, commented out of the
+  kustomization). No `namespace:` anywhere: Flux's `targetNamespace` places them, which is
+  what lets prod and dev share identical manifests.
+- **`.github/workflows/build-and-deploy.yml`** — builds on `main` and `dev`, pushes to
+  `ghcr.io/monkecloud/<repo>`, then commits the tag into `k8s/`. It never talks to the
+  cluster, which is why no inbound path is needed.
+
+**A friend cannot see the cluster.** They have no kubeconfig and the API is LAN-only, so
+their debugging stops at CI and the manifests; a failing reconcile has to be read by whoever
+holds admin access. That is a deliberate consequence of GitHub-only access, and the
+troubleshoot skill says so rather than offering commands that cannot run.
 
 ## GitOps — Flux, bootstrapped 2026-09-08
 
@@ -782,16 +790,15 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
 - `terraform/10-vms/cloud-init/user-data.yaml.tftpl` writes `/etc/rancher/k3s/config.yaml`
   with `disable: [servicelb]` and `tls-san: [<api_vip>]` **before k3s first starts** — the
   SAN cannot be added later without regenerating the apiserver cert and rolling every node.
-  Layer 10 and layer 20 both have an `api_vip` variable and they must agree.
-- `terraform/20-platform/{metallb,traefik,kube-vip}.tf` build the rest. MetalLB is a real
-  `helm_release` here rather than the `HelmChart` CR that is running today — the same
-  deliberate difference the README already documents for every other operator.
-- Layer 10 still fetches a kubeconfig pointing at the init node (nothing answers on the VIP
-  that early); layer 20 repoints it via `terraform/scripts/point-kubeconfig-at-vip.sh`,
-  which verifies the VIP with certificate verification **on** and restores the original if
-  it fails — that check is what catches a missing `tls-san`.
-- `terraform/modules/site` now defaults to **2 replicas** with required anti-affinity and a
-  PDB (skipped at 1 replica, where `minAvailable: 1` would block every drain).
+  Its `api_vip` variable must match the VIP that MetalLB and kube-vip claim in Flux.
+- MetalLB, kube-vip and the Traefik config are Flux manifests under
+  `clusters/tamarin/platform/`.
+- Terraform fetches a kubeconfig pointing at the init node (nothing answers on the VIP that
+  early). `terraform/scripts/point-kubeconfig-at-vip.sh` repoints it once Flux has kube-vip
+  up — a manual step now — and it verifies the VIP with certificate verification **on**,
+  restoring the original if it fails. That check is what catches a missing `tls-san`.
+- Two replicas with required anti-affinity plus a PDB is the app pattern (skip the PDB at
+  1 replica, where `minAvailable: 1` would block every drain).
 - Verified by rendering the templates and diffing against the live cluster: the kube-vip
   manifest is byte-identical, and chart version, pool, Traefik args, middleware and site
   replicas all match.

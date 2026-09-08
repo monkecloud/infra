@@ -89,7 +89,7 @@ only apply what that Role already allows.
 - The owner's Postgres credentials as Secret `<owner>-pg` and Garage credentials as
   `<owner>-garage`. Prod uses the `uri` key, dev uses `uri_dev`.
 - Nothing else. A cache is the app repo's own business — see
-  `templates/redis.example.yaml`.
+  `templates/app-repo/k8s/redis.yaml`.
 
 Apps that outgrow the shared database or bucket can have their own without a new
 credential: a CNPG `Database` CR owned by the same role, or

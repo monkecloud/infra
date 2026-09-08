@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# No `namespace:` here. Flux applies this repo with `targetNamespace` set to the namespace
+# built for this app-environment, so the same manifests serve prod and dev unchanged.
+resources:
+  - site.yaml
+  - ingress.yaml
+  # A cache for this repo, if it needs one. Read the header in the file first — it is
+  # best-effort storage, and its password Secret is created by the cluster admin.
+  # - redis.yaml

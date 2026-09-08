@@ -1,0 +1,83 @@
+# What actually runs. This file is the source of truth: Flux applies it, so the cluster
+# matches the repo and nothing is configured by hand.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __APP__
+  labels: { app: __APP__ }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: __APP__ }
+  template:
+    metadata:
+      labels: { app: __APP__ }
+    spec:
+      # One replica per node, so losing a node cannot take the app down.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: __APP__ }
+              topologyKey: kubernetes.io/hostname
+      # Only needed if the GHCR package is private; without it the pull fails 401 and the
+      # pod sits in ImagePullBackOff. Delete these lines if the package is public.
+      imagePullSecrets:
+        - name: ghcr-creds
+      containers:
+        - name: app
+          # CI rewrites this tag on every push. Never `:latest` — the tag is how rollback
+          # works, and a moving tag means a restarted pod silently changes version.
+          image: ghcr.io/monkecloud/__APP__:REPLACE-ME
+          ports:
+            - containerPort: 8080
+          env:
+            # Postgres. `uri` is the production database, `uri_dev` the scratch one — the
+            # dev branch's manifests should use uri_dev.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: __OWNER__-pg, key: uri }
+            # Garage (S3-compatible). Not AWS: every call needs the endpoint set
+            # explicitly and path-style addressing.
+            - name: S3_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: __OWNER__-garage, key: endpoint }
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef: { name: __OWNER__-garage, key: bucket }
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: __OWNER__-garage, key: access_key }
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: __OWNER__-garage, key: secret_key }
+            # Uncomment together with k8s/redis.yaml.
+            # - name: REDIS_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef: { name: __APP__-redis, key: password }
+            # - name: REDIS_URL
+            #   value: redis://default:$(REDIS_PASSWORD)@__APP__-redis:6379/0
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: __APP__
+spec:
+  selector: { app: __APP__ }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+# Required by the two-replica pattern: without it a node drain can take both replicas at
+# once. Drop it if you ever run a single replica, where minAvailable: 1 blocks every drain.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: __APP__
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: __APP__ }

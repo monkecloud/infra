@@ -7,5 +7,6 @@ resources:
   - ../base
   - flux.yaml
   - git-auth.sops.yaml
+  - ghcr-creds.sops.yaml   # the GHCR package is private, so the pod needs a pull secret
 # The site talks to nothing, so no ../_owners/yarn — a namespace only gets credentials it
 # actually uses.

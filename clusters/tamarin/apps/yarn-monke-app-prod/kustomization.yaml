@@ -13,3 +13,4 @@ resources:
   - git-auth.sops.yaml       # read-only deploy key; the repo is private
   - ghcr-creds.sops.yaml     # the GHCR package is private, so the pod needs a pull secret
   - redis-password.sops.yaml # the cache this repo runs; a different password per namespace
+  - db-name.yaml             # names this environment's own Postgres database

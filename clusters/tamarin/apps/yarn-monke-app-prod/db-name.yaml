@@ -1,0 +1,15 @@
+# Which database this environment's app talks to. Not a Secret: a database name is not a
+# credential, and the credential itself (yarn's role) is unchanged and still comes from
+# ../_owners/yarn.
+#
+# This is per namespace rather than an overlay patch on purpose. A patch that fails to
+# match — as the DATABASE_URL one would have, being keyed to the monke-app Deployment by
+# name — leaves the app pointing at the other environment's database and says nothing. A
+# missing ConfigMap instead keeps the pod in CreateContainerConfigError, which is loud.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monke-app-db
+  namespace: yarn-monke-app-prod
+data:
+  database: monke_app

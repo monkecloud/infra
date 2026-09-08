@@ -1,0 +1,37 @@
+# Databases for apps that have outgrown their owner's shared one, as apps/README.md
+# describes: a Database CR owned by the same role, so the app needs no new credential — it
+# keeps connecting as its owner, just to a database of its own.
+#
+# These live here rather than in the app's namespace because the CR is namespaced to the
+# CNPG Cluster it names, not to the app that uses it.
+#
+# databaseReclaimPolicy: retain, so deleting one of these CRs — or the app it belongs to —
+# leaves the data on disk. Dropping a database stays a deliberate act at the psql prompt.
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: monke-app
+  namespace: postgres
+spec:
+  cluster:
+    name: pg
+  # Underscores: the SQL identifier is unquoted in most tooling, and monke-app would need
+  # quoting everywhere it appears.
+  name: monke_app
+  owner: yarn
+  ensure: present
+  databaseReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: monke-app-dev
+  namespace: postgres
+spec:
+  cluster:
+    name: pg
+  name: monke_app_dev
+  owner: yarn
+  ensure: present
+  databaseReclaimPolicy: retain

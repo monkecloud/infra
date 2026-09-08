@@ -32,3 +32,41 @@ spec:
     name: app
   targetNamespace: yarn-monke-app-dev
   serviceAccountName: deployer
+  # The only two things that differ between prod and dev. They live here, not on the dev
+  # branch: the app repo's two branches stay byte-identical so a dev -> master merge never
+  # conflicts, and this overlay is what makes dev a different environment.
+  patches:
+    # The scratch database, not the production one. A strategic merge, so it matches the
+    # container and the env var by name — a positional JSON patch would silently rewrite
+    # the wrong variable the first time someone reorders the list.
+    - target:
+        kind: Deployment
+        name: monke-app
+      patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: monke-app
+        spec:
+          template:
+            spec:
+              containers:
+                - name: app
+                  env:
+                    - name: DATABASE_URL
+                      valueFrom:
+                        secretKeyRef:
+                          name: yarn-pg
+                          key: uri_dev
+    # Its own hostname. Two Ingresses claiming one host would fight over a single
+    # certificate, and cert-manager would issue for whichever asked last.
+    - target:
+        kind: Ingress
+        name: monke-app
+      patch: |
+        - op: replace
+          path: /spec/tls/0/hosts/0
+          value: dev-app.monke.ca
+        - op: replace
+          path: /spec/rules/0/host
+          value: dev-app.monke.ca

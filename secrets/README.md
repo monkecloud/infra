@@ -9,24 +9,25 @@ remain diffable.
 
 ## Why these are NOT under clusters/tamarin/
 
-Flux does not reconcile this directory, deliberately. A secret belongs next to the
-manifest that consumes it, and those manifests still live in Terraform (`20-platform`,
-`30-workloads`) rather than in Flux. Applying secrets on their own would gain nothing,
-and two of them are currently owned by operators that would fight over them:
+Flux does not reconcile this directory, deliberately. Both files are owned by operators
+that would fight Flux over them:
 
 - `postgres--pg-app` is generated and managed by CloudNativePG.
 - `cert-manager--letsencrypt-prod-account-key` is managed by cert-manager.
 
-As each workload moves into Flux, its secret moves into the reconciled tree beside it.
-Until then this directory is a **recovery vault**: enough to rebuild, not yet live.
+So this directory is a **recovery vault** — enough to rebuild, never applied. Every other
+credential lives in the reconciled tree beside what consumes it: each person's Postgres and
+Garage secrets are in `clusters/tamarin/apps/_owners/<person>/`, from where an app overlay
+copies them into that app's namespace.
 
 ## Why these specific secrets
 
 They are the ones a rebuild cannot regenerate correctly, because restored data or an
 external service has already seen them:
 
-- Tenant `*-pg` / `*-garage`, and `pg-app` — restored Postgres carries these
-  passwords inside it; regenerating would lock you out of your own data.
+- `pg-app` — restored Postgres carries this password inside it; regenerating would lock you
+  out of your own data. The same reasoning applies to the per-person `*-pg` / `*-garage`
+  secrets, which live under `clusters/tamarin/apps/_owners/`.
 - `letsencrypt-prod-account-key` — keeps your ACME account identity across rebuilds.
 
 Site TLS certificates are deliberately **not** kept. Sites live in their own repos; when one

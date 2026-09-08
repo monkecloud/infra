@@ -1,0 +1,54 @@
+# The identity Flux impersonates when applying this app's repo.
+#
+# kustomize-controller impersonates `system:serviceaccount:<the Kustomization's own
+# namespace>:<serviceAccountName>`, so this ServiceAccount and the Kustomization that
+# names it must live in the same namespace — this one. A Kustomization parked in
+# flux-system naming an SA from elsewhere resolves to an account that does not exist and
+# fails Forbidden on every reconcile.
+#
+# This Role is therefore the deploy boundary: an app repo is untrusted input, and Flux can
+# only apply what is listed here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+rules:
+  - apiGroups: ['']
+    resources: [pods, pods/log, services, configmaps, secrets, persistentvolumeclaims, events]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Read-only on the guardrails, so a repo can see them but not raise its own limits.
+  - apiGroups: ['']
+    resources: [resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer

@@ -1,0 +1,62 @@
+# Default-deny both ways, with the few destinations an app legitimately needs.
+#
+# Because a namespace now holds one app in one environment, "own namespace" means this
+# app and its own cache — dev cannot reach prod's Redis, and one app cannot reach
+# another's, without anything having to be spelled out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    # This app's own pods.
+    - from:
+        - podSelector: {}
+    # Traefik, so the app can be published.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: garage
+      ports:
+        - { protocol: TCP, port: 3900 }
+    # The public internet, minus everything local: pods, services, the home LAN and
+    # link-local. Without these exclusions an app can reach the kube API, NodePorts,
+    # XO and dom0 SSH.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+              - 192.168.2.0/24
+              - 169.254.0.0/16

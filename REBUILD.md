@@ -12,7 +12,7 @@ you are reading this under pressure.
 
 **What is NOT automatic.** Terraform builds VMs; Flux builds Kubernetes. Between and after
 them are five manual steps. Miss them and the cluster comes up looking healthy but Garage
-serves nothing and tenants have no database. They are marked ⚠ below.
+serves nothing and apps have no database. They are marked ⚠ below.
 
 ---
 
@@ -114,7 +114,7 @@ easiest step to miss.
 ./scripts/garage-bucket.sh    # once per bucket
 ```
 
-Needed: `yarn-data`, `cubesnail-data`, `registry`, and any project buckets.
+Needed: `yarn-data`, `cubesnail-data`, and any per-app buckets.
 
 Restoring instead of starting fresh? **Do not let this generate new keys.** Restored objects
 are owned by the original key IDs. Import the committed ones:
@@ -123,19 +123,19 @@ are owned by the original key IDs. Import the committed ones:
 kubectl exec -n garage garage-0 -- /garage key import <key-id> <secret-key> --yes
 ```
 
-Key IDs and secrets are in this repo under `clusters/tamarin/workloads/tenants/` and
-`registry/`. Decrypt with `sops --decrypt <file>`.
+Key IDs and secrets are in this repo under `clusters/tamarin/apps/_owners/<person>/`.
+Decrypt with `sops --decrypt <file>`.
 
 ## 7. ⚠ Postgres roles and databases
 
 ```bash
-../scripts/pg-tenant.sh <tenant> <password>     # once per tenant
+./scripts/pg-tenant.sh <person> <password>     # once per person
 ```
 
-Use the **committed** password from `clusters/tamarin/workloads/tenants/<tenant>--<tenant>-pg.sops.yaml`,
+Use the **committed** password from `clusters/tamarin/apps/_owners/<person>/pg.sops.yaml`,
 not a new one — restored Postgres data carries the old password hashes inside it.
 
-This also does the `REVOKE CONNECT ON DATABASE ... FROM PUBLIC` that makes tenant isolation
+This also does the `REVOKE CONNECT ON DATABASE ... FROM PUBLIC` that makes the isolation
 real. Without it any role can connect to any database.
 
 ## 8. Restore data
@@ -148,11 +148,11 @@ by syncing them back into the buckets from step 6.
 Nothing site-specific lives in this repo by design — no domain list, no TLS certificates.
 Each site or app is its own repo carrying its own `k8s/`.
 
-For each one you want back: add a `GitRepository` + `Kustomization` under
-`clusters/tamarin/`, copying `templates/project-kustomization.example.yaml`. Set
-`serviceAccountName` to the owning tenant so Flux applies it with only that tenant's
-permissions. Certificates issue themselves from the Ingress in the project's own repo, once
-DNS and the port-forwards are right.
+For each one you want back: add an overlay under `clusters/tamarin/apps/` and list it in
+that directory's `kustomization.yaml` — see `clusters/tamarin/apps/README.md`. The overlay
+creates the app's namespace and its `GitRepository` + `Kustomization`, which applies the
+app's repo as that namespace's `deployer` ServiceAccount. Certificates issue themselves from
+the Ingress in the app's own repo, once DNS and the port-forwards are right.
 
 ---
 
@@ -166,17 +166,18 @@ kubectl exec -n garage garage-0 -- /garage status   # 4 nodes, layout applied
 kubectl get pods -A | grep -v Running               # only Completed
 ```
 
-Tenant isolation is not verified by any of the above. Check it explicitly:
+App isolation is not verified by any of the above. Check it explicitly, against a namespace
+you actually rebuilt (`NS=yarn-blog-prod`):
 
 ```bash
-kubectl auth can-i --as=system:serviceaccount:yarn:yarn-user get nodes   # must be "no"
+kubectl auth can-i --as=system:serviceaccount:$NS:deployer get nodes   # must be "no"
 ```
 
-And confirm a tenant credential actually authenticates:
+And confirm a committed credential actually authenticates:
 
 ```bash
-kubectl run pgcheck --rm -i --restart=Never -n yarn --image=postgres:18-alpine \
-  --env PGPASSWORD="$(kubectl get secret yarn-pg -n yarn -o go-template='{{index .data "password"|base64decode}}')" \
+kubectl run pgcheck --rm -i --restart=Never -n $NS --image=postgres:18-alpine \
+  --env PGPASSWORD="$(kubectl get secret yarn-pg -n $NS -o go-template='{{index .data "password"|base64decode}}')" \
   --command -- psql -h pg-rw.postgres.svc.cluster.local -U yarn -d yarn_dev \
   -tAc "select current_user"
 ```

@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# One entry per app-environment. Listing them explicitly is what keeps `base/` and
+# `_owners/` from being applied on their own — Flux would otherwise pick up every
+# directory under clusters/tamarin. See README.md for what an entry looks like.
+resources: []

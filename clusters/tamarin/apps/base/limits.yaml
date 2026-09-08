@@ -1,0 +1,25 @@
+# One app in one environment. Overlays patch these when an app genuinely needs more —
+# a prod site with 2 replicas plus a cache fits in the defaults.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+spec:
+  hard:
+    pods: '10'
+    requests.cpu: '1'
+    requests.memory: 2Gi
+    limits.cpu: '2'
+    limits.memory: 4Gi
+    persistentvolumeclaims: '3'
+    requests.storage: 10Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limits
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }

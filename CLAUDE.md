@@ -110,7 +110,7 @@ Two leftovers, deliberately not touched:
   - **Global services are the durable tier.** Anything that must survive is stored by a
     cluster-wide service that replicates itself across nodes — today **Postgres** and
     **Garage (S3)**. These are the only two things on the cluster that promise durability.
-  - **Tenant workloads keep nothing durable.** No Longhorn. If a tenant needs to keep
+  - **App workloads keep nothing durable.** No Longhorn. If an app needs to keep
     something, it goes into Postgres or the bucket.
   - **Anything non-durable belongs to a repo, not to this layer** (user's rule 2026-09-08).
     A cache — Redis today — is declared by the repo that wants one, in that repo's own
@@ -121,11 +121,11 @@ Two leftovers, deliberately not touched:
   - **Such a cache is explicitly best-effort.** A `local-path` PVC with appendonly on
     survives a pod restart, but it is one pod on one node: unavailable while that node is
     down and *gone* if that node is lost. Not replicated, not backed up. It is a cache /
-    lock / rate limiter / rebuildable queue, and the tenant docs say so in exactly those
+    lock / rate limiter / rebuildable queue, and the app docs say so in exactly those
     terms. The user's framing: "a 'hey sorry, I told you it wasn't persistent' kind of
     thing."
   - New durable needs get added as a **global** service (a future Kafka-like event store was
-    floated), not by giving a tenant workload a volume.
+    floated), not by giving an app workload a volume.
   - **Data in Postgres and Garage is never an infra-level concern** (user's rule,
     2026-09-08). This layer provisions the *services* — the CNPG Cluster, the Garage
     StatefulSet, buckets, keys, roles, databases — and stops there. What is stored inside
@@ -208,7 +208,7 @@ Two leftovers, deliberately not touched:
 
 **This layer does not track which websites exist.** A site is its own repo: app code, its
 own `k8s/` (Deployment, Service, Ingress), and a `GitRepository`+`Kustomization` under
-`clusters/tamarin/` so Flux applies it as the owning tenant. Nothing here needs a list of
+`clusters/tamarin/apps/` so Flux applies it as that app. Nothing here needs a list of
 domains, and no site TLS certificate is kept at this level — cert-manager issues one from
 the Ingress in the site's own repo.
 
@@ -239,7 +239,7 @@ Give the site's repo an `Ingress` with `cert-manager.io/cluster-issuer: letsencr
 `Certificate` and fills the Secret in. Two replicas with required pod anti-affinity plus a
 PDB is the house pattern, so losing a node does not take the site down — see
 `tenant-kits/*/repo/k8s/` for a working example, and
-`templates/project-kustomization.example.yaml` for the Flux side.
+`clusters/tamarin/apps/README.md` for the Flux side.
 
 ### Gotchas worth keeping
 - **Renaming an Ingress silently breaks renewal.** cert-manager's `Certificate` is owned by
@@ -289,127 +289,90 @@ Installed the same "HelmChart CR in kube-system, no local helm CLI needed" patte
 
 ## Terraform rebuild path — written 2026-09-07 (`./terraform/`)
 
-Disaster-recovery IaC for the whole stack: base template → VMs → k3s → operators → workloads. **Not applied against the live cluster** and not imported into state — it's a rebuild path, and running `apply` on the running cluster would collide with everything that already exists (and would install the operators as real Helm releases where they're currently k3s `HelmChart` CRs). See `terraform/README.md` for the full writeup; only the decisions worth knowing at this level are repeated here.
+Disaster-recovery IaC for the VM layer: XCP-ng VMs → cloud-init → k3s. **Not applied against the live cluster** and not imported into state — it's a rebuild path, and running `apply` on the running cluster would collide with the VMs that already exist. See `terraform/README.md` for the full writeup; only the decisions worth knowing at this level are repeated here.
 
-- **Three root modules, applied in order**, split because each configures its providers from the previous one's outputs (layer 20 can't build a Kubernetes provider before layer 10 has produced a cluster):
-  | Layer | Builds |
-  |---|---|
-  | `terraform/10-vms/` | 4 VMs via the `vatesfr/xenorchestra` provider, one pinned per host with `affinity_host`, cloud-inited into k3s servers. Fetches the admin kubeconfig to `terraform/kubeconfig`. |
-  | `terraform/20-platform/` | kube-router, MetalLB + ingress VIP, kube-vip + control-plane VIP, Traefik HA config, cert-manager + `letsencrypt-prod` ClusterIssuer, CNPG operator, Garage. |
-  | `terraform/30-workloads/` | `pg` Cluster, tenant namespaces (yarn/cubesnail), the three sites + Ingresses. |
+- **One root module**, `terraform/10-vms/`: 4 VMs via the `vatesfr/xenorchestra` provider, one pinned per host with `affinity_host`, cloud-inited into k3s servers, then the admin kubeconfig fetched to `terraform/kubeconfig`. Everything inside Kubernetes is Flux's job.
 - **Out of scope, deliberately**: all data; the XCP-ng pool itself; the `tamarin-k3s-base` template (its build is an image-import process, documented above, not something Terraform expresses); router port-forwards and DNS.
 - **The provider replaces the manual cloud-init seeding entirely** — `cloud_config`/`cloud_network_config` on `xenorchestra_vm` do what the qemu-nbd/kpartx VDI-mounting dance did by hand. That whole procedure is now only needed for building the template itself.
-- **Chart versions are pinned** to what's running: cert-manager `v1.21.1`, cloudnative-pg `0.29.0`, metallb `0.16.1`, kube-vip image `v1.2.3`.
 - **Provider-specific gotcha**: `xenorchestra_vm` has no `wait_for_ip`. Waiting for boot is expressed as `expected_ip_cidr` on the `network` block instead.
 - **`prevent_destroy` is set on all four node VMs** — destroying one drops an etcd member, including as the destroy half of a replacement. Comment the `lifecycle` block out deliberately when a node genuinely needs rebuilding, one at a time.
-- **Three things can't be Terraform resources** and run as scripts via `local-exec` (all idempotent, all verified against the live cluster): Garage's `layout assign`/`layout apply` (a fresh Garage cluster is inert until it has a layout), Garage bucket + bucket-scoped key creation, and the site-content upload. The bucket script writes its generated credentials straight into a Kubernetes Secret, so per-site Garage keys never enter Terraform state.
+- **Two things can't be Terraform resources** and run as scripts in `terraform/scripts/` (both idempotent, both verified against the live cluster): Garage's `layout assign`/`layout apply` (a fresh Garage cluster is inert until it has a layout), and Garage bucket + bucket-scoped key creation.
   - Those scripts prefer a local `kubectl` and fall back to running `kubectl` on a node over SSH, since dt2 has neither `kubectl` nor `terraform` installed as of writing (`sudo pacman -S terraform kubectl` — both are in `extra`).
   - `layout show` prints **16-char short node ids** while `node id -q` returns the full 64 — compare the prefix or the idempotency check never matches.
 - **Generated, not hardcoded**: k3s join token, Garage RPC secret. Fresh values are correct for a rebuild; each has a variable to override when matching a cluster that's still running (which is the case when adding a node). Postgres is untouched — CNPG generates `pg-app` itself.
-- **A Garage-backed site's pods sit in `Init` until its content exists.** On a fresh rebuild the
-  bucket is empty, so the fetch initContainer fails and the rollout never completes. That is the
-  expected state, not a failure — content arrives from the site's own repo/CI, not from here.
 - State files, tfvars and the fetched kubeconfig are gitignored — they hold the same class of credentials this file does. `.terraform.lock.hcl` is deliberately **not** ignored.
 
-## Multi-tenant developer bundles — built 2026-09-07 (`cubesnail`, `yarn`)
+## Apps and namespaces — one namespace per app per environment (2026-09-08)
 
-Both friend namespaces were turned into self-serve tenants that can develop against the
-shared infra (pg/garage) with scoped, non-admin credentials. Kits for handover live
-in `/home/yarn/infra/tenant-kits/<tenant>/` (`repo/` is safe to commit; `CREDENTIALS.md`
-and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
+A namespace is `<owner>-<app>-<env>`: `yarn-blog-prod`, `yarn-blog-dev`. The owner prefix is
+there because Postgres roles and Garage buckets are cluster-global, and so `kubectl get ns`
+says whose app something is. Everything lives in `clusters/tamarin/apps/` — `base/` holds the
+namespace, the `deployer` SA + Role + binding, ResourceQuota, LimitRange and both
+NetworkPolicies; an overlay per app-environment sets `namespace:` and lists the owner's
+credentials plus its own Flux objects. That directory's README is the copy-paste.
 
-- **Postgres**: role `<tenant>` + two databases (`<tenant>`, `<tenant>_dev`) on the existing
-  shared `pg` cluster — deliberately *not* a second CNPG cluster (3 more pods for one tenant
-  is waste, and PG role isolation is strong). `public` schema in each is owned by the tenant.
-  `CONNECT` was **revoked from `PUBLIC` on every tenant database and on `app`** — without that
-  revoke any role can connect to any database, so tenant isolation would be nonexistent. The
-  `app` owner is unaffected (database owners hold CONNECT implicitly). Verified both ways.
-  - Provisioning script: **`./scripts/pg-tenant.sh`** (also at `/root/pg-tenant.sh` on the k3s nodes). Idempotent; takes tenant name + password. Creates the role, `<tenant>` and `<tenant>_dev` databases, and does the `REVOKE CONNECT ... FROM PUBLIC` that makes the isolation real. Not yet expressed in Terraform — see the tenant gap noted above.
-- **Cache**: none is provisioned for a tenant. A repo that wants Redis ships its own
-  single-pod StatefulSet (`templates/redis.example.yaml`) into its namespace, names it after
-  the project, and creates the `<project>-redis` Secret holding its password — the tenant
-  Role already allows Secrets, StatefulSets, Services and PVCs. Deliberately not one shared
-  Redis for the cluster: a single instance has one password and no per-tenant ACLs, so
-  tenants could read and `FLUSHALL` each other's keys. Single-pod (not HA) fits the "a few
-  minutes of downtime is fine" philosophy, and per-repo means a project's cache dies with
-  the project.
-  - **A cache URL needs `default` as the username**: `redis://default:<pass>@<name>:6379/0`.
-    The `redis://:<pass>@...` form sends an *empty* username, and a `requirepass`-only
-    server rejects it with `WRONGPASS` — which reads like a wrong password rather than a
-    malformed URL. Cost real time here: `redis-cli -a <pass>` answered PONG on the same
-    pod where `-u redis://:<pass>@...` failed.
-  - The shipped manifest satisfies the stricter **`restricted`** profile (runAsNonRoot 999,
-    `fsGroup: 999` for the volume, seccomp `RuntimeDefault`, all caps dropped), so it
-    admits with no PSA warnings at all. Verified end to end with the *tenant's own*
-    kubeconfig: Secret, StatefulSet, Service and PVC all created, pod Ready, PONG over the
-    Service from a second pod using the assembled URL. Then torn down again.
-- **Garage**: bucket `<tenant>-data` + bucket-scoped key `<tenant>-data-key`, same pattern as
-  `monke-ca-key`.
-- **Secrets** (per namespace, consumed by Deployments via `secretKeyRef`, never hardcoded):
-  `<tenant>-pg` (incl. ready-made `uri`/`uri_dev`), `<tenant>-garage`. A per-repo cache
-  password is the repo's own Secret, not one of these.
-- **NetworkPolicy `isolate-egress` was rewritten** (both namespaces) from the old permissive
-  version to genuine default-deny. Allowed: own namespace, kube-system DNS :53, `postgres`
-  :5432, `garage` :3900, and the public internet **excluding** `10.42.0.0/16` (pods),
-  `10.43.0.0/16` (services), `192.168.2.0/24` (home LAN) and link-local.
-  - The old policy's only exclusion was the pod CIDR, which left the **entire service CIDR
-    and the whole home LAN reachable** from tenant pods — i.e. the kube API, cluster
-    NodePorts, XO and dom0 SSH. That is what the rewrite closes.
-  - Verified with throwaway pods in each namespace: pg/own-namespace/garage/DNS/internet
-    ALLOW; kube API, the other tenant's pods, dom0 :22, LAN NodePorts all BLOCK.
-- **RBAC**: the `<tenant>-admin` Role / `<tenant>-user` SA grant namespaced CRUD on
-  pods/services/configmaps/secrets/PVCs/deployments/jobs/ingresses, plus `pods/exec`,
-  `pods/portforward` and `policy/poddisruptionbudgets`. Kubeconfigs generated from the SA
-  token secrets; verified they can manage their own namespace and are Forbidden on nodes
-  and on the other tenant's namespace.
-  - `pods/portforward` and PDBs were added 2026-09-08 so a tenant can reach Postgres from a
-    laptop (see the pg relay below) and so their repo can describe its whole workload —
-    a PDB is required by the 2-replica site pattern, and without the rule `kubectl apply`
-    of their own manifests fails halfway.
-  - **Gotcha, cost real time**: `kubectl auth can-i create pods/portforward` returned **yes**
-    while the actual port-forward was **Forbidden**. RBAC treats `pods/portforward` as a
-    distinct subresource that a `pods` rule does not cover, but `auth can-i` reports a false
-    positive here. Trust a real API call, not `can-i`, when checking subresource access.
-- **Deploy model: the friend runs `kubectl apply -k k8s/` themselves** over the tailnet, with
-  manifests versioned in their repo. An in-cluster git-pull reconciler was designed and then
-  dropped — it only existed to avoid an inbound path, and Tailscale provides one anyway; RBAC
-  is the actual boundary either way.
-- **Their Claude learns the environment from `repo/CLAUDE.md`** (endpoints, env var names,
-  the stateless/no-PVC rule, quota, deploy commands — **no credential values**) plus a
-  `repo/.claude/settings.json` allowlisting the sanctioned commands. This is what replaced the
-  idea of exposing an MCP server: Claude Code has Bash, so the credential is the security
-  boundary, not the tool surface, and an MCP server would have added a public service to secure
-  without adding a boundary.
-- **Postgres from a laptop: a relay pod, deliberately not a NodePort** (settled 2026-09-08).
-  Postgres has no NodePort, and a tenant kubeconfig cannot port-forward into the `postgres`
-  namespace. A NodePort for `pg-rw` would have fixed it in one line but exposes Postgres to
-  every device on `192.168.2.0/24`, permanently, to buy a convenience — so instead each kit
-  ships `k8s/dev/pg-relay.yaml`: a `socat` pod in the tenant's *own* namespace forwarding to
-  `pg-rw`, which they port-forward to. Access stays gated by the kubeconfig they already have,
-  the relay only exists while they are using it, and no new LAN surface is created.
-  - `kubectl apply -k k8s/dev/` then `kubectl port-forward deploy/pg-relay 5432:5432`, and
-    connect to `localhost:5432`. Kept in a separate kustomize target so it cannot be applied
-    as part of a release. Verified end-to-end as the tenant: real Postgres answered with a
-    SCRAM-SHA-256 challenge.
-  - This is why the tenant Role needed `pods/portforward` (see the RBAC note above).
-- **Pod Security admission added 2026-09-07 (after the fact — the bundle was incomplete without it).**
-  The tenant Role grants pod-create, and with no PSA in place a tenant could create a
-  `privileged` + `hostPath: /` + `hostNetwork` pod. Verified as an actual escape with the
-  tenant kubeconfig: it read `/var/lib/rancher/k3s/server` (agent-token, cred, db) off the node,
-  and `hostNetwork` bypassed the NetworkPolicy entirely (reached dom0 :22, which is BLOCK for a
-  normal pod). **NetworkPolicies do not apply to hostNetwork pods** — that is the key thing to
-  remember; egress rules are not a boundary on their own if a tenant can set `hostNetwork: true`.
-  - Fix: `pod-security.kubernetes.io/enforce=baseline` (+`enforce-version=latest`,
-    `warn`/`audit=restricted`) on both tenant namespaces. Re-verified: the same pod is now
-    Forbidden, and ordinary pods still schedule. `restricted` was deliberately **not** enforced —
-    it requires runAsNonRoot/seccomp/dropped-caps and would break stock images like
-    `nginx:alpine`; it is set to warn/audit only, so the warnings on tenant pods are advisory.
-  - Existing workloads were rollout-restarted to confirm they still admit under `baseline`.
-- **One rebuild gap remains.** Flux reproduces the namespace, SA, Role + binding,
-  ResourceQuota, LimitRange, both NetworkPolicies and the tenant Secrets, but the tenant's
-  **Postgres role and databases** are still created by hand — `scripts/pg-tenant.sh` is
-  wired into nothing. A rebuild therefore yields tenants who have a namespace, permissions
-  and a committed password, but no role to use it on.
+This replaced a namespace per *person*. The reason to switch: an environment is now a
+namespace rather than a variant inside one, so dev and prod run **identical manifests** — no
+`nameSuffix`, no `includeSelectors` label surgery, no shared quota — and dev cannot reach
+prod's cache or database, because default-deny egress is per namespace. Deleting an app is
+deleting a directory.
+
+- **Flux impersonation is namespace-local, and this is easy to get wrong.**
+  kustomize-controller impersonates `system:serviceaccount:<the Kustomization's own
+  namespace>:<serviceAccountName>` — *not* the namespace the manifests are applied into.
+  A Kustomization in `flux-system` naming an SA that lives elsewhere resolves to an account
+  that does not exist and fails `Forbidden` on every reconcile. Verified on this cluster; the
+  error names `system:serviceaccount:flux-system:<sa>` explicitly. So the GitRepository, the
+  Kustomization and the `deployer` SA all live together in the app's namespace.
+- **The `deployer` Role is the deploy boundary.** An app repo is untrusted input: Flux applies
+  it *as* that SA, so it can only create what the Role allows — namespaced CRUD on
+  pods/services/configmaps/secrets/PVCs/deployments/statefulsets/jobs/ingresses/PDBs, and
+  read-only on the quota, limits and network policies so a repo cannot raise its own ceiling.
+  No `pods/exec` or `pods/portforward`: nothing deploys with a kubeconfig any more.
+  - **Gotcha worth keeping**: `kubectl auth can-i create pods/portforward` returns **yes**
+    when the real call is **Forbidden**. RBAC treats subresources as distinct, and `can-i`
+    reports a false positive. Trust a real API call when checking subresource access.
+- **Friends get GitHub access only** (user's call 2026-09-08) — no kubeconfig, no LAN, no
+  tailnet. The RBAC boundary still matters because Flux applies their commits as their SA, but
+  the handover kit no longer contains credentials or a kubeconfig at all.
+- **Secrets are applied by the infra repo, never carried in an app repo.** `flux-system` is the
+  only Kustomization holding the SOPS age key, so it applies them. An app overlay lists
+  `_owners/<person>`, and the `namespace:` transformer puts a copy of that person's `<person>-pg`
+  and `<person>-garage` Secrets into the app's namespace — Secrets do not cross namespaces, so
+  each app namespace holds its own copy of the same value. A friend's repo therefore cannot
+  contain a credential to leak.
+- **Postgres**: one role per person plus `<person>` and `<person>_dev` databases on the shared
+  `pg` cluster — deliberately *not* a second CNPG cluster (3 more pods for one person is waste,
+  and PG role isolation is strong). `CONNECT` is **revoked from `PUBLIC` on every database
+  including `app`** — without that revoke any role can connect to any database and the
+  isolation is nonexistent. Database owners keep CONNECT implicitly, so the `app` owner is
+  unaffected. Provisioned by **`./scripts/pg-tenant.sh`** (idempotent; role + both databases +
+  the revoke).
+- **An app that outgrows the shared database or bucket needs no new credential.** A CNPG
+  `Database` CR with `owner: <person>` creates a database the existing role owns, and
+  `garage bucket allow --read --write <bucket> --key <person>-data-key` grants the existing key
+  a new bucket (flags verified against the running Garage v2.2.0). Both CRDs — `databases` and
+  `databaseroles` — are present, so per-app databases are declarative Flux manifests rather
+  than a script.
+- **Garage**: bucket `<person>-data` + bucket-scoped key `<person>-data-key`.
+- **NetworkPolicy is default-deny both directions.** Allowed: this app's own pods, kube-system
+  DNS :53 and Traefik ingress, `postgres` :5432, `garage` :3900, and the public internet
+  **excluding** `10.42.0.0/16` (pods), `10.43.0.0/16` (services), `192.168.2.0/24` (home LAN)
+  and link-local. Without those exclusions an app reaches the kube API, cluster NodePorts, XO
+  and dom0 SSH.
+- **Pod Security `baseline` is enforced** on every app namespace, with `restricted` as
+  warn/audit. This is not optional decoration: the Role grants pod-create, and with no PSA a
+  repo could ship a `privileged` + `hostPath: /` + `hostNetwork` pod. That was verified as a
+  real escape once — it read `/var/lib/rancher/k3s/server` off the node, and **hostNetwork
+  bypassed the NetworkPolicy entirely** (reached dom0 :22, which is BLOCK for a normal pod).
+  **NetworkPolicies do not apply to hostNetwork pods** — egress rules are not a boundary on
+  their own if a workload can set `hostNetwork: true`. `restricted` is deliberately not
+  enforced: it demands runAsNonRoot/seccomp/dropped-caps and would reject stock images like
+  `nginx:alpine`.
+- **One rebuild gap remains**: the person's Postgres role and databases are still created by
+  hand, since `scripts/pg-tenant.sh` is wired into nothing. A rebuild yields namespaces,
+  permissions and committed passwords, but no role to use them on. The CNPG `Database` and
+  managed-`roles` CRDs above are the obvious way to close it.
 
 ## Container images — GHCR
 
@@ -428,33 +391,29 @@ recreate.
   means a restarted pod silently changes version.
 
 
-## Tenant repo kits — `/home/yarn/infra/tenant-kits/<tenant>/`
+## App repo kits — `/home/yarn/infra/tenant-kits/<person>/repo/`
 
-What a friend receives. `repo/` is safe to commit into their app repo; `CREDENTIALS.md` and
-`kubeconfig-*.yaml` are mode-600 and go out of band.
+What a friend receives: a repo skeleton, and nothing else. They have no kubeconfig and no LAN
+access, so there is no credential handover any more — the cluster injects credentials as
+environment variables, and they push to GitHub.
 
-- **`repo/CLAUDE.md`** — ambient facts only: service endpoints, env var names, stateless rule,
-  PSA baseline, egress limits, quota. Always loaded, no credential values.
-- **`repo/.claude/skills/deploy/`** and **`.../troubleshoot/`** — procedures, loaded on demand so
-  they cost nothing while writing ordinary app code. `deploy` covers both the image path and the
-  static Garage-tarball path; `troubleshoot` is keyed to this cluster's actual failure modes —
-  **blocked egress presents as a hang, not an error**, PSA rejections look like manifest syntax
-  errors, `local-path` pins pods to a node, `logs --previous` for crashloops.
+- **`repo/CLAUDE.md`** — ambient facts only: service endpoints, env var names, the
+  stateless rule, PSA baseline, egress limits, quota. Always loaded, no credential values.
+- **`repo/.claude/skills/deploy/`** and **`.../troubleshoot/`** — procedures, loaded on demand
+  so they cost nothing while writing ordinary app code. `troubleshoot` is keyed to this
+  cluster's real failure modes: **blocked egress presents as a hang, not an error**, PSA
+  rejections look like manifest syntax errors, `local-path` pins a pod to a node,
+  `logs --previous` for crashloops, and `WRONGPASS` from a `redis://:pass@` URL.
 - **`repo/.claude/settings.json`** — allowlists the sanctioned commands so their Claude is not
-  prompted constantly, with `.env` and kubeconfigs denied.
-- **`repo/k8s/`** — the manifests for what the tenant actually runs, so the repo is the
-  source of truth rather than the cluster: `site.yaml` (Deployment + Service + PDB, 2
-  replicas with required anti-affinity), `ingress.yaml` (their domain, cert-manager
-  annotated), `dev/pg-relay.yaml` (the laptop Postgres path, separate kustomize target),
-  and `deployment.yaml` — a container-image scaffold left commented out of the
-  kustomization until they have an image to ship. All carry `imagePullSecrets:
-  ghcr-creds`, needed only when the GHCR package is private; without it the pull fails 401
-  and the pod sits in `ImagePullBackOff`. That Secret does not exist yet.
-- **There is no kit template or generator yet** — `tenant-kits/` holds only the two
-  per-tenant copies, and every change so far has been hand-applied to both. A
-  `tenant-kits/template/` plus a `new-tenant.sh` that substitutes the tenant name is the
-  fix; deferred deliberately until the deploy model settles, since CI is likely to change
-  what a kit even contains.
+  prompted constantly.
+- **`repo/k8s/`** — the manifests Flux applies: `site.yaml` (Deployment + Service + PDB, 2
+  replicas with required anti-affinity), `ingress.yaml`, `deployment.yaml` (a container-image
+  scaffold, commented out until they have an image) and `redis.yaml` (an optional cache, also
+  commented out). `imagePullSecrets: ghcr-creds` is only needed when the GHCR package is
+  private; that Secret does not exist yet.
+- **There is no kit template or generator yet** — `tenant-kits/` holds only the two per-person
+  copies and every change has been hand-applied to both. A `template/` plus a script that
+  substitutes the name is the fix; deferred until CI settles what a kit even contains.
 
 ## GitOps — Flux, bootstrapped 2026-09-08
 
@@ -490,21 +449,15 @@ tailnet/inbound path that was blocking CI.
 - Verified end to end: a commit applied without any `kubectl`, and deleting the file removed
   the resource from the cluster (`prune: true` works).
 
-### Planned shape, not yet built
-One repo per project, each with a `k8s/` directory Flux applies. Per-tenant `GitRepository`
-+ `Kustomization` files are drafted in `/home/yarn/infra/gitops/clusters/tamarin/tenants/`
-but **not committed** — they point at project repos that do not exist yet.
-- Each Kustomization sets `serviceAccountName: <tenant>-user`, so Flux applies a tenant's
-  manifests **as that tenant**. Their existing Role is the deploy boundary; a tenant repo is
-  untrusted input, not a privileged one. This is the main reason the design fits here.
-- **Namespaces stay per-person, not per-project** (user's call 2026-09-08) — several of the
-  user's projects share the `yarn` namespace. Resource names must therefore differ between
-  projects in the same namespace; pruning is safe, since a Kustomization only prunes what it
-  itself created.
-- Images go to **GHCR** (`ghcr.io/monkecloud/<repo>`), built by GitHub Actions using the
-  per-run `GITHUB_TOKEN` — no PAT needed and no runner to own. Workflow template drafted at
-  `/home/yarn/infra/gitops/templates/build-and-deploy.yml`: it builds, pushes, then commits
-  the new tag into the repo's `k8s/`, which is what Flux picks up.
+### How a project repo joins
+One repo per app, with a `k8s/` directory Flux applies. The wiring — an overlay under
+`clusters/tamarin/apps/` carrying the namespace, the credentials and the app's own
+`GitRepository` + `Kustomization` — is described in that directory's README. No project
+repos exist yet, so `apps/kustomization.yaml` lists nothing.
+
+Images go to **GHCR** (`ghcr.io/monkecloud/<repo>`), built by GitHub Actions using the
+per-run `GITHUB_TOKEN` — no PAT needed and no runner to own. `templates/build-and-deploy.yml`
+builds, pushes, then commits the new tag into the repo's `k8s/`, which is what Flux picks up.
 
 
 ## Rebuild-from-git architecture — decided 2026-09-08, partially built
@@ -540,7 +493,7 @@ This reverses the earlier "generated, not hardcoded" choice for the k3s token an
 secret, and the bucket script's "credentials never enter Terraform state" design. Those are
 good state hygiene and they break restore.
 
-- **Must be committed**: tenant `*-pg`/`*-garage`, `pg-app`,
+- **Must be committed**: each person's `*-pg`/`*-garage`, `pg-app`,
   `letsencrypt-prod-account-key`.
 - **Can be generated**: k3s join token, Garage RPC secret, all operator PKI
   (`cnpg-ca`, `*-webhook-cert`, `pg-server`, `pg-replication`, `metallb-memberlist`,
@@ -589,7 +542,7 @@ good state hygiene and they break restore.
 2. `terraform apply` in `10-vms` → VMs + k3s
 3. Paste the age key into the cluster
 4. `flux bootstrap` against `monkecloud/infra`
-5. Flux builds the platform, tenants and sites; certs issue themselves
+5. Flux builds the platform and every app namespace; each app's own repo follows; certs issue themselves
 6. Restore data; `garage key import` for the object-store keys
 7. Point DNS/router at the new address
 
@@ -618,23 +571,18 @@ Services, StatefulSet), kube-vip, kube-router, the MetalLB pool + L2Advertisemen
 ### Workloads converted to Flux — 2026-09-08
 `clusters/tamarin/workloads/` under a `workloads` Kustomization that `dependsOn: platform`
 (the `pg` Cluster needs CNPG's CRDs first). Same export-then-diff method; every file came back
-byte-identical, nothing restarted.
+byte-identical, nothing restarted. It holds ns `postgres` + the 3-instance `pg` Cluster —
+app namespaces live in `clusters/tamarin/apps/` instead, applied by the root Kustomization.
 
-Now Flux-owned: ns `postgres` + the 3-instance `pg` Cluster; both tenants complete (namespace
-with its PSA labels, `<tenant>-user` SA, `<tenant>-admin` Role + binding, ResourceQuota,
-LimitRange, both NetworkPolicies); and the `placeholder` namespace.
+**Each person's credentials moved out of `secrets/` into the reconciled tree** —
+`apps/_owners/<person>/`, from where an app overlay copies them into its own namespace.
+Verified that a Flux-applied credential still authenticates (`psql` as `yarn` on `yarn_dev`) —
+re-applying a Secret with a changed value would silently break auth, so this is worth checking
+rather than assuming.
 
-**The tenant secrets moved out of `secrets/` into the reconciled tree** beside the workloads
-that consume them — `*-pg`, `*-garage` for each tenant. Verified afterwards that a
-Flux-applied credential still authenticates
-(`psql` as `yarn` on `yarn_dev`) — re-applying a Secret with a changed value would silently
-break auth, so this is worth checking rather than assuming.
-
-**Still in `secrets/` as an unreconciled vault**, deliberately:
-- `postgres--pg-app` (CNPG owns it), `cert-manager--letsencrypt-prod-account-key`
-  (cert-manager owns it) — Flux applying these would fight the operator.
-- The three `*-tls` certs and `placeholder--monke-ca-garage-key` — no consumer while the
-  sites are torn down. They move into the tree when the sites come back.
+**Still in `secrets/` as an unreconciled vault**, deliberately: `postgres--pg-app` (CNPG owns
+it) and `cert-manager--letsencrypt-prod-account-key` (cert-manager owns it) — Flux applying
+either would fight the operator.
 
 ### Everything moved into the repo — 2026-09-08
 `/home/yarn/infra` was **never a git repo**, so `terraform/`, the five scripts and this file
@@ -716,7 +664,7 @@ The usual answer is local for fast restore plus cloud for site loss; either alon
 2. **cert-manager secrets — cheap and high-value.** The ACME account key and issued certs are *not* in Terraform, and Let's Encrypt rate-limits reissues (5 duplicate certs per week per domain set). Losing them means the sites can come back but their certificates might not, for days. A periodic dump of the `cert-manager` namespace secrets plus the per-site TLS secrets is small and prevents a genuinely annoying outage.
 3. **Garage.** No native backup. Object-level `rclone sync` (or `aws s3 sync`) to the off-cluster target, as a CronJob. Restore needs `garage key import` so objects stay owned by their original key IDs — see the Garage notes above.
 4. **etcd.** k3s can upload its own snapshots: `--etcd-s3`, `--etcd-s3-endpoint`, `--etcd-s3-bucket`, `--etcd-s3-access-key`, `--etcd-s3-secret-key`. No cron or scripts needed and it registers `ETCDSnapshotFile` resources. Restore is `k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one node, then rejoin the rest. Worth being clear that **with the Terraform, etcd restore is not the primary recovery path** — rebuilding is cleaner. Its value is covering things created outside Terraform.
-5. **Per-repo caches: deliberately never backed up.** A repo's Redis is the best-effort tier by definition (see storage tiers) — if a repo would miss the contents, they belong in Postgres or the bucket instead, which is what the tenant docs tell them. A repo that genuinely wants its own RDB shipped somewhere can add its own CronJob; it is not this layer's job.
+5. **Per-repo caches: deliberately never backed up.** A repo's Redis is the best-effort tier by definition (see storage tiers) — if a repo would miss the contents, they belong in Postgres or the bucket instead, which is what the app docs tell them. A repo that genuinely wants its own RDB shipped somewhere can add its own CronJob; it is not this layer's job.
 6. **VM-level via XO.** Now viable again since the XO fix above. Add a remote (XO supports NFS/SMB/local/S3) and a delta backup job over the 4 k3s VMs plus the `tamarin-k3s-base` template. Coarse net and fast whole-node rollback. Note that a snapshot of a running Postgres is only crash-consistent — CNPG recovers via WAL replay, but the barman backup is the authoritative path, not this.
 7. **XO's own state.** `/home/yarn/xo-data/` on dt2 (see XO section). Small, and currently protected by nothing.
 
@@ -852,7 +800,7 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
 - **Backup target machine** — nothing to back up *to* yet; see the backup section above. This is the blocking prerequisite for all of it.
 - **Longhorn** — still not installed. Only workload type actually planned for it (something without its own replication) hasn't come up yet.
 - **A durable queue / event store as a future global service** — raised 2026-09-08 as the kind
-  of thing that would join Postgres and Garage in the durable tier if tenants need it. Kafka
+  of thing that would join Postgres and Garage in the durable tier if an app needs it. Kafka
   is the obvious name but is heavy for 4-core nodes (JVM, 3 brokers, ZooKeeper-or-KRaft);
   **Redpanda** (single binary, no JVM) or **NATS JetStream** (much lighter still) are the
   realistic candidates at this size. Nothing needs one yet — don't build it on spec, which
@@ -863,12 +811,12 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
   the user's 2026-09-07 call. Revisit if a friend ever deploys something unaudited.
 - **Tailscale — no longer needed for deploys.** It was the blocking prerequisite for CI while
   the plan was push-based (a hosted runner cannot reach `192.168.2.x`). Flux pulling from
-  GitHub removed that need entirely, and a tenant's laptop reaches Postgres through the
-  in-namespace relay rather than the tailnet. Still genuinely open for **admin access** —
-  `kubectl` and SSH are LAN-only, so nothing works from outside the house. Not urgent.
+  GitHub removed that need entirely, and friends deploy by pushing to GitHub rather than by
+  reaching the cluster at all. Still genuinely open for **admin access** — `kubectl` and SSH
+  are LAN-only, so nothing works from outside the house. Not urgent.
 - **No sites are deployed, and none are tracked here** (user's call 2026-09-08 — the infra
   layer should not carry a list of websites). A site is its own repo; to publish one, see
-  "Publishing a site" above and `templates/project-kustomization.example.yaml`.
+  "Publishing a site" above and `clusters/tamarin/apps/README.md`.
 - **`monkecloud/monke-ca-site`** exists (private) holding the static source imported from the
   old Garage tarball. It has no Dockerfile, `k8s/` or workflow yet, so nothing deploys it —
   that is the next step for it.

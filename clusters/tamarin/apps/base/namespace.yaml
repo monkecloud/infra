@@ -1,0 +1,14 @@
+# The namespace itself. Every overlay renames this via its `namespace:` field, so this
+# name is a placeholder that is never created as-is.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-namespace
+  labels:
+    # `baseline` is enforced: no privileged containers, no hostPath, no hostNetwork or
+    # host ports. `restricted` is warn/audit only — it would reject stock images like
+    # nginx:alpine, which run as root.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

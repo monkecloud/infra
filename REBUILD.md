@@ -143,11 +143,16 @@ real. Without it any role can connect to any database.
 Postgres via CNPG `spec.bootstrap.recovery` against the backup object store; Garage objects
 by syncing them back into the buckets from step 6.
 
-## 9. Sites
+## 9. Sites and apps
 
-Each project repo carries its own `k8s/`. Add its `GitRepository` + `Kustomization` under
-`clusters/tamarin/`, copying `templates/project-kustomization.example.yaml`. Certificates
-issue themselves once DNS and the port-forwards are right.
+Nothing site-specific lives in this repo by design — no domain list, no TLS certificates.
+Each site or app is its own repo carrying its own `k8s/`.
+
+For each one you want back: add a `GitRepository` + `Kustomization` under
+`clusters/tamarin/`, copying `templates/project-kustomization.example.yaml`. Set
+`serviceAccountName` to the owning tenant so Flux applies it with only that tenant's
+permissions. Certificates issue themselves from the Ingress in the project's own repo, once
+DNS and the port-forwards are right.
 
 ---
 

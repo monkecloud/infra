@@ -161,53 +161,81 @@ A 5-host XCP-ng pool named **"Tamarin"** (hosts tamarin-01 through tamarin-05), 
 ## Compute headroom note (2026-09-07)
 - k3s VM sizing (RAM/vCPU, documented above under "k3s cluster") was maxed out **before** any of Postgres/cert-manager existed. All of this landed on top of that same fixed headroom — nothing's been resized since. Worth revisiting node RAM/CPU if things start getting tight as more workloads land.
 
-## Public TLS sites — cert-manager, deployed 2026-09-07
-- **cert-manager** installed the same way as CNPG: a `HelmChart` CR in `kube-system` (repo `https://charts.jetstack.io`, chart `cert-manager`, `installCRDs: true`), targeting namespace `cert-manager`.
-- **ClusterIssuer `letsencrypt-prod`**: ACME HTTP-01 via Traefik (`ingressClassName: traefik`), contact email `admin@monke.ca` (user-supplied — deliberately not the user's personal email, since Let's Encrypt is a third party that gets this address for expiry notices).
-- **Prerequisite already done by user, not by Claude**: router port-forwards 80+443 → **`192.168.2.200`** (the MetalLB ingress VIP — see "Ingress HA" below), and DNS/DDNS for each domain already points at the home public IP before any of this was set up.
-- **No site is currently deployed.** All three were torn down 2026-09-08 to be rebuilt through
-  GitOps (see the Flux section) — Deployments, Services, PDBs and Ingresses removed. The
-  domains resolve here and the router still forwards, so each one now gets Traefik's default
-  self-signed cert and an SNI mismatch. That is the expected "nothing configured" state, not
-  a fault.
-  | Domain | Namespace it belonged to | TLS Secret (preserved) |
-  |---|---|---|
-  | monke.ca | `yarn` | `monke-ca-tls` |
-  | munke.biz | `placeholder` | `munke-biz-tls` |
-  | cubesnail.rip | `cubesnail` | `cubesnail-rip-tls` |
-  - **The TLS Secrets were deliberately kept** when the Ingresses were deleted. Their
-    `Certificate` resources were garbage-collected along with the Ingresses that owned them
-    (expected — see the naming gotcha below), but the Secrets hold certs valid to December.
-    Keeping them avoids burning Let's Encrypt's duplicate-cert allowance (5/week per domain
-    set) on the rebuild; monke.ca had already used 2 of its 5 this week.
-  - Recreating an Ingress with the same `secretName` and the cert-manager annotation is what
-    brings each site back. Expect cert-manager to reissue anyway in some cases — it did during
-    the namespace move earlier that day — which is fine while the weekly allowance holds.
-  - Backups taken before the teardown: manifests and the monke.ca tarball are in the session
-    scratchpad, and a durable copy of the content is at
-    `/home/yarn/infra/monke-ca-site.tar.gz`. Both Garage buckets (`yarn-data`, `monke-ca`)
-    still hold `site.tar.gz` — nothing in object storage was touched.
-  - `banan.ca` was tried first but its DNS resolves to an AWS IP (`3.17.27.70`), not the user's home IP — swapped for `munke.biz` instead, which resolves correctly. If the user ever fixes banan.ca's DNS, it can be added the same way (new `tls`/`rules` entries pointing at the same or a new backend).
-  - munke.biz and cubesnail.rip never had real content — both were `nginxdemos/hello:plain-text`.
-    Only monke.ca had a real site.
+## Publishing a site — cert-manager + Traefik
 
-  ### monke.ca content — the Garage-tarball pattern (torn down, kept for the technique)
-  The site was static HTML/CSS/JS, ~1.6MB with assets, no server-side logic. **Do not assume
-  the old source path in `~/prg` is current — ask.** The deployed artifact is the tarball in
-  Garage, and a copy is at `/home/yarn/infra/monke-ca-site.tar.gz`. Kept the deployment **stateless** (per the "stateless unless pg/garage/per-tenant-redis" policy above) by using the same object-storage-backed pattern proven earlier for friend sites in the `Friend hosting on k3s` memory, rather than a PVC or a custom-built image:
-  - Site content is tarred (`tar czf`, excluding `.git`) and stored as the single object `site.tar.gz` in the tenant's own **Garage** bucket `yarn-data`. Creds come from Secret `yarn-garage` (ns `yarn`, keys `endpoint`/`bucket`/`access_key`/`secret_key`), **not** hardcoded in the manifest — the same per-tenant Secret every yarn workload uses.
-  - The original `monke-ca` bucket and its `monke-ca-key` still exist and still hold a copy of the tarball; nothing reads from them any more. They are what dt2's `aws --profile garage` is configured against (see below).
-  - `yarn-site` Deployment (ns `yarn`) has two initContainers sharing an `emptyDir` (`work`): `minio/mc` pulls `site.tar.gz` from the bucket (internal endpoint `http://garage-s3-api.garage.svc.cluster.local:3900`, reads creds from the Secret via env vars), then `busybox:1.36` untars it into a second `emptyDir` (`webroot`). Main container is plain `nginx:1.27-alpine` serving that `webroot` mount.
-  - **Content updates require re-uploading `site.tar.gz` to the bucket and bouncing the pod** (`kubectl rollout restart deployment/yarn-site -n yarn`) — init containers only run once at pod start, no live sync. Same tradeoff already accepted for the `yarn-site` pattern this was copied from.
-  - Uploading to Garage from outside the cluster needed an S3 client — none was present on `dt2` at first, so this first upload was worked around by running a throwaway `minio/mc` pod in-cluster, streaming the local tarball in over `kubectl exec -i ... -- sh -c 'cat > file'` (plain `kubectl cp` fails into that image since it has no `tar` binary), then `mc cp` from inside that pod to the internal Garage endpoint.
-  - **Fixed 2026-09-07**: `aws-cli-v2` installed on `dt2` via pacman (`extra` repo, no AUR needed — both `aws-cli` and `aws-cli-v2` packages exist there). Configured a `garage` profile (`aws configure set ... --profile garage`) using the `monke-ca-key` credentials above. Since Garage isn't real AWS, every call needs `--endpoint-url http://<any node IP>:30390` (Garage's S3 NodePort, reachable directly from `dt2` on the LAN) and `--profile garage`, e.g.:
-    ```bash
-    aws --profile garage --endpoint-url http://192.168.2.101:30390 s3 cp site.tar.gz s3://monke-ca/site.tar.gz
-    ```
-    **Note**: this profile's key (`monke-ca-key`) only has RW on the `monke-ca` bucket specifically, not general Garage access — it can't list/manage other buckets like `yarn-site`. monke.ca's content now lives in the `yarn-data` bucket, which this key cannot reach — updating the site means using the `yarn-garage` credentials (Secret `yarn-garage`, ns `yarn`) instead. A broader admin-level key would be needed for general Garage administration from `dt2`; not created yet since that's a wider-access decision left for the user to request explicitly.
-  - **Garage gotcha**: the `dxflrs/garage` image is distroless (no shell, no `ls`/`find`/`which`) — the `garage` binary itself is at `/garage` as the container's entrypoint, so admin commands are `kubectl exec -n garage garage-0 -- /garage <subcommand>`, not a shell session.
-  - **Naming gotcha hit while renaming these** (worth remembering for any future rename of an Ingress with a cert-manager annotation): deleting an Ingress that owns a cert-manager `Certificate` **garbage-collects that Certificate** (it's owned by the Ingress via `ownerReference`), but the TLS `Secret` itself survives untouched. A newly-created Ingress with the same annotation **refuses to adopt** a differently-owned/orphaned cert resource ("certificate resource is not owned by this object"), so after a rename the old cert tracking silently vanishes even though the site keeps serving the (no-longer-tracked) existing cert. Fix: delete the stale TLS `Secret`(s) too, then delete+reapply the Ingress — forces a clean, properly-owned reissue. Cheap given Let's Encrypt's rate limits, but don't skip it or renewal silently stops working.
-  - `cubesnail.rip` was deliberately exposed the **same direct port-forward + Traefik + cert-manager way** as the user's own domains, per explicit user choice 2026-09-07 — this is a **departure** from the Cloudflare Tunnel plan floated earlier in the `Friend hosting on k3s` memory for friend-hosted (unaudited) content. Revisit Tunnel if cubesnail deploys something real here.
+**This layer does not track which websites exist.** A site is its own repo: app code, its
+own `k8s/` (Deployment, Service, Ingress), and a `GitRepository`+`Kustomization` under
+`clusters/tamarin/` so Flux applies it as the owning tenant. Nothing here needs a list of
+domains, and no site TLS certificate is kept at this level — cert-manager issues one from
+the Ingress in the site's own repo.
+
+What this layer provides, once, for all of them:
+
+- **cert-manager** installed as a `HelmChart` CR in `kube-system` (repo
+  `https://charts.jetstack.io`, chart `cert-manager`, `installCRDs: true`), namespace
+  `cert-manager`. In Flux at `clusters/tamarin/platform/operators.yaml`.
+- **ClusterIssuer `letsencrypt-prod`** — ACME HTTP-01 solved through Traefik
+  (`ingressClassName: traefik`), contact `admin@monke.ca` (deliberately not the user's
+  personal address; Let's Encrypt is a third party that gets it for expiry notices). In Flux
+  at `clusters/tamarin/platform-config/cert-manager-issuer.yaml`.
+- Traefik itself is a **k3s-bundled chart** — only its `HelmChartConfig` is ours. See the
+  platform README in the repo.
+
+### Prerequisites that live outside the cluster
+Both must be right *before* an Ingress is applied, or the HTTP-01 challenge hangs forever
+rather than failing:
+- Router forwards **80 and 443 → `192.168.2.200`** (the MetalLB ingress VIP, **not** a node
+  address — see "Ingress HA").
+- The domain's DNS/DDNS points at the house's public IP. A domain pointing elsewhere leaves
+  its challenge pending indefinitely with no useful error.
+- DHCP pool stays `.10-.99` so it cannot hand out a VIP or a node address.
+
+### To publish a site
+Give the site's repo an `Ingress` with `cert-manager.io/cluster-issuer: letsencrypt-prod`,
+`ingressClassName: traefik`, and a `tls` block naming a Secret. cert-manager creates the
+`Certificate` and fills the Secret in. Two replicas with required pod anti-affinity plus a
+PDB is the house pattern, so losing a node does not take the site down — see
+`tenant-kits/*/repo/k8s/` for a working example, and
+`templates/project-kustomization.example.yaml` for the Flux side.
+
+### Gotchas worth keeping
+- **Renaming an Ingress silently breaks renewal.** cert-manager's `Certificate` is owned by
+  the Ingress that requested it, so deleting that Ingress garbage-collects the Certificate —
+  but the TLS `Secret` survives, and a new Ingress refuses to adopt it (*"certificate
+  resource is not owned by this object"*). The site keeps serving a valid certificate that
+  nothing is renewing. After any rename, delete the orphaned Secret too and let cert-manager
+  reissue.
+- **Let's Encrypt allows 5 duplicate certificates per domain per week.** Use the **staging**
+  issuer for anything iterative, especially rebuild drills.
+- A domain whose DNS resolves somewhere else (an old host, a parked page) will never
+  validate. Check with `dig +short <domain>` against the house's public IP first.
+- With no Ingress for a hostname, Traefik answers with its own default self-signed
+  certificate, so clients report an SNI/name mismatch rather than a 404. That is the
+  "nothing is configured for this domain" signal, not a fault.
+
+## Garage (S3) — operating notes
+
+- **Admin commands go through the pod, and the image is distroless** — no shell, no `ls`, no
+  `which`. The `garage` binary is at `/garage` as the entrypoint, so it is
+  `kubectl exec -n garage garage-0 -- /garage <subcommand>`, never a shell session. `k9s`'s
+  `s` (shell) fails on these pods for the same reason.
+- **A fresh Garage does nothing until it has a layout.** Nodes find each other but hold no
+  data ranges, so every S3 call fails while the pods look healthy.
+  `terraform/scripts/garage-layout.sh` assigns and applies it, putting each node in a zone
+  named after its k3s node so replicas land on different hypervisors.
+- `layout show` prints **16-char short node ids** while `node id -q` returns the full 64 —
+  compare prefixes or an idempotency check never matches.
+- **Keys can be recreated with their original IDs**: `garage key import <key-id> <secret-key>
+  --yes`. This is what makes restore-from-backup work, since restored objects are owned by
+  the original key ID. Verified present in Garage v2.2.0.
+- **From dt2**, Garage is reachable on the S3 NodePort `30390` at any node IP. It is not real
+  AWS, so every call needs the endpoint and path-style addressing:
+  ```bash
+  aws --endpoint-url http://192.168.2.101:30390 s3 ls s3://<bucket>/
+  ```
+  `aws-cli-v2` is installed (pacman `extra`). There is a configured `garage` profile, but its
+  key is scoped to a single bucket, so it is not an admin credential — a broader key would
+  have to be created deliberately, and hasn't been.
 
 ## Postgres — deployed 2026-09-07
 Installed the same "HelmChart CR in kube-system, no local helm CLI needed" pattern used for cert-manager.
@@ -842,17 +870,17 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
   realistic candidates at this size. Nothing needs one yet — don't build it on spec, which is
   exactly how the shared Redis ended up unused.
 - tamarin-01's hardware issue is still unresolved (user checking physical console separately) — see possible sighting above. If/when it rejoins the Xen pool (a fresh `xe pool-join` — its old identity is gone), it needs its own k3s VM. Easiest path now is the Terraform one: add an entry to the `nodes` map in `terraform/10-vms/terraform.tfvars` with IP `.105` and set `k3s_token` to the running cluster's token so it joins rather than forming its own. The manual equivalent is `xe vm-copy` to its local-storage SR plus a cloud-init seed with the shared token above.
-- Cloudflare Tunnel for friend-hosted content (see `Friend hosting on k3s` memory) — not built; cubesnail.rip went the direct-exposure route instead per user's 2026-09-07 call, see above.
+- Cloudflare Tunnel for friend-hosted content — considered and not built. Friend sites are
+  exposed the same direct way as the user's own (port-forward → Traefik → cert-manager), per
+  the user's 2026-09-07 call. Revisit if a friend ever deploys something unaudited.
 - **Tailscale — no longer needed for deploys.** It was the blocking prerequisite for CI while
   the plan was push-based (a hosted runner cannot reach `192.168.2.x`). Flux pulling from
   GitHub removed that need entirely, and a tenant's laptop reaches Postgres through the
   in-namespace relay rather than the tailnet. Still genuinely open for **admin access** —
   `kubectl` and SSH are LAN-only, so nothing works from outside the house. Not urgent.
-- **The sites are all torn down** (2026-09-08, user's call) — monke.ca, munke.biz and
-  cubesnail.rip serve nothing. They come back as per-project repos: create the repo, drop in
-  the `k8s/` from `tenant-kits/*/repo/k8s/`, add a `GitRepository`+`Kustomization` copied from
-  `templates/project-kustomization.example.yaml`. TLS Secrets were preserved, so this does not
-  have to re-issue certificates.
+- **No sites are deployed, and none are tracked here** (user's call 2026-09-08 — the infra
+  layer should not carry a list of websites). A site is its own repo; to publish one, see
+  "Publishing a site" above and `templates/project-kustomization.example.yaml`.
 - **No project repos exist yet.** `monkecloud/infra` is the only repo in the org.
 - **The rebuild path has never been run.** Every piece was verified individually — manifests
   diffed byte-identical against live, Flux adoption caused zero restarts, a Flux-applied

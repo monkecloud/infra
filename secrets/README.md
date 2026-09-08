@@ -30,8 +30,12 @@ external service has already seen them:
 - `registry-*` — htpasswd, the shared `REGISTRY_HTTP_SECRET`, and the Garage creds
   backing the registry's blobs.
 - `letsencrypt-prod-account-key` — keeps your ACME account identity across rebuilds.
-- `*-tls` — re-issuable, but keeping them avoids burning Let's Encrypt's 5-per-week
-  duplicate-certificate allowance during a rebuild.
+- `registry--registry-admin-password` — the registry's htpasswd holds bcrypt hashes, which
+  are one-way, so this plaintext cannot be recovered from the Secret that a rebuild restores.
+
+Site TLS certificates are deliberately **not** kept. Sites live in their own repos; when one
+lands, cert-manager issues its certificate from the Ingress in that repo. Nothing at this
+level needs to know which domains exist.
 
 Operator PKI (`cnpg-ca`, `*-webhook-cert`, `pg-server`, `pg-replication`,
 `metallb-memberlist`, `k3s-serving`, node passwords) is deliberately absent — it

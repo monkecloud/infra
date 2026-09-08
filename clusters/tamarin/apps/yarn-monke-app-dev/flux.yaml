@@ -33,8 +33,9 @@ spec:
   targetNamespace: yarn-monke-app-dev
   serviceAccountName: deployer
   # The only two things that differ between prod and dev. They live here, not on the dev
-  # branch: the app repo's two branches stay byte-identical so a dev -> master merge never
-  # conflicts, and this overlay is what makes dev a different environment.
+  # branch: the app repo's manifests stay identical on both branches, so a promotion only
+  # ever conflicts on the CI-written image tag, and this overlay is what makes dev a
+  # different environment.
   patches:
     # The scratch database, not the production one. A strategic merge, so it matches the
     # container and the env var by name — a positional JSON patch would silently rewrite

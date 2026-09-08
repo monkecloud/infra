@@ -18,10 +18,14 @@ serves nothing and tenants have no database. They are marked ⚠ below.
 
 ## 0. Prerequisites
 
-A working XCP-ng pool, and a VM template to clone. `tamarin-k3s-base` ships k3s
-pre-installed, but it is **not required** — cloud-init installs the pinned k3s version on
-first boot if the image lacks it, so a stock Ubuntu 24.04 cloud image works. Set
-`template_name` accordingly.
+A working XCP-ng pool, and a VM template to clone.
+
+**Use the official Ubuntu 24.04 cloud image.** Import it into XCP-ng as a template and point
+`template_name` at it. Cloud-init installs the pinned k3s version plus open-iscsi and
+nfs-common on first boot, so there is no custom image to build or maintain.
+
+`tamarin-k3s-base` is the pre-baked template in use today — equivalent, just faster to boot.
+If it is gone, do not rebuild it.
 
 Outside the cluster, and needed before certificates will issue:
 
@@ -185,6 +189,6 @@ the ones with no automation to catch a mistake.
 - `pg-tenant.sh`, `garage-layout.sh` and `garage-bucket.sh` have **no automatic caller**.
   They were invoked by Terraform layers that no longer exist. That is why they are ⚠ steps
   here rather than something that just happens.
-- The `tamarin-k3s-base` template build is still a manual image process, documented in
-  `../CLAUDE.md`. Cloud-init installing k3s makes it optional, not reproducible.
+- Importing a base image into XCP-ng is manual, but it is now the *vendor's* image rather
+  than a custom one — no bespoke image to maintain.
 - Router port-forwards and DNS are outside all of this.

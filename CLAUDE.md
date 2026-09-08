@@ -704,7 +704,7 @@ crashloops)**. Note `s` fails on Garage — that image is distroless with no she
 Note `/bin/fish` is the shell here: unquoted bash heredocs (`<<EOF`) fail to parse. Use a
 quoted delimiter (`<<'EOF'`) or write the script to a file first.
 
-## Remote access — Tailscale subnet routers (written 2026-09-08, not yet enabled)
+## Remote access — Tailscale subnet routers, live 2026-09-08
 
 `kubectl` and SSH are LAN-only today, which stops working the moment the cluster and the
 desktop are on different subnets. The answer is a **subnet router**: `tailscaled` in a pod
@@ -728,11 +728,20 @@ XO and the NodePorts without any of those hosts running Tailscale.
 - **The `tailscale` namespace carries no Pod Security labels on purpose.** A subnet router
   needs `/dev/net/tun` and `NET_ADMIN`, which `baseline` forbids. Nothing else runs there and
   no app can deploy into it.
-- **Enabling it is uncommenting two lines** — one entry in `platform/kustomization.yaml`
-  (operator + secret), one in `platform-config/kustomization.yaml` (the `Connector`, which
-  needs the operator's CRDs first). They are commented because `wait: true` on the platform
-  Kustomization means an operator that cannot authenticate would hold back platform-config
-  and workloads behind it.
+- **Measured, by probing `pg-rw`'s ClusterIP from dt2** — a destination only reachable
+  through a router, so a success proves the path end to end:
+  | Event | Result |
+  |---|---|
+  | Killing the primary router pod (it restarts in ~20s) | 7 failed probes of 538, **9.1s** |
+  | Primary removed and kept away (all nodes cordoned) | router-1 **promoted at t+18s**, 8 of 445, **16.8s** |
+  The second row is the one that matters: it is the node-loss case, and it proves the
+  standby is actually promoted rather than the original pod simply coming back. Do the test
+  that way — a plain `kubectl delete pod` recovers before Tailscale's control plane declares
+  the device gone, and `tailscale down` inside the container is undone immediately by
+  containerboot, so neither shows you a real failover.
+- **The tailnet route to `192.168.2.0/24` does not appear on dt2** while dt2 is on that LAN;
+  Tailscale skips routes to directly-connected networks. `10.43.0.0/16` is installed and is
+  what proves the path today. When the cluster moves subnets, the LAN route appears too.
 - **Friends are a later, separate step**: the operator's API server proxy in `auth` mode
   gives them `kubectl` against this cluster with their tailnet identity impersonated into
   Kubernetes — no LAN route and no kubeconfig to hand over. `apiServerProxyConfig.mode` is

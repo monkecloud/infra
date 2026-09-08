@@ -77,6 +77,34 @@ A 5-host XCP-ng pool named **"Tamarin"** (hosts tamarin-01 through tamarin-05), 
 - **Postgres and Garage both already replicate themselves at the application layer** (Postgres streaming replication, Garage's own data distribution). Backing their volumes with Longhorn on top of that would double the replication (once at app layer, once at Longhorn's block layer) — wasted network/disk traffic on 1GbE links for no safety benefit.
   - **Decision: give Postgres/Garage local, non-replicated storage** via k3s's built-in `local-path-provisioner` (fast, no network hop), and let each app handle its own cross-node redundancy.
   - **Use Longhorn only for future workloads that don't have built-in replication of their own.**
+### Site content model, settled 2026-09-08
+A site is a repo. **Static content lives in that repo** and is baked into an image by its
+Dockerfile, so content is versioned with code and a deploy is one new tag. Non-static state
+goes to Postgres or Garage, which is a backups concern.
+
+This **retired the Garage-tarball pattern** — tar the site, upload to a bucket, fetch with
+two init containers at pod start. It also removed that pattern's worst edge: a content update
+needed a `rollout restart`, because init containers only run at pod start.
+
+`terraform/scripts/upload-site.sh` was deleted with it, and the tenant kits were rewritten:
+site manifests are plain image Deployments pointing at `ghcr.io/monkecloud/<repo>`, the deploy
+skill has a single build-and-push path instead of two, and the internal-registry credentials
+are gone from `.env.example` and the kit docs.
+
+### The internal registry was removed — 2026-09-08
+GHCR made it redundant and nothing pointed at it. Removed: its Flux directory (namespace,
+Deployment, Service, PDB, three secrets), both tenants' `registry-creds`, and the vaulted
+admin password. Nothing was pulling from it; Flux pruned it cleanly and nothing broke.
+
+Two leftovers, deliberately not touched:
+- **`/etc/rancher/k3s/registries.yaml` still exists on all four nodes**, naming a host that no
+  longer answers. Inert, since nothing pulls from it, and it was configured by hand rather
+  than by cloud-init — so a rebuild never recreates it. Removing it needs SSH plus a rolling
+  `systemctl restart k3s`, and the root password is deliberately not recorded anywhere any
+  more, so it needs the user to supply it.
+- **The Garage `registry` bucket and its `registry-key` still exist**, holding the old image
+  blobs. Deleting bucket data is destructive and is the user's call.
+
 - **Storage tiers, settled 2026-09-08.** The rule is now about *who owns the service*, not
   about individual workloads:
   - **Global services are the durable tier.** Anything that must survive is stored by a

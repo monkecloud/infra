@@ -5,9 +5,9 @@ kind: Kustomization
 namespace: yarn-monke-app-prod
 resources:
   - ../base
-  # yarn's Postgres role and Garage key. The app has no code using them yet, but its
-  # manifests already reference the keys, so the Secrets have to exist or the pods sit in
-  # CreateContainerConfigError.
+  # yarn's Postgres role and Garage key. The api connects with the Postgres one; the
+  # Garage key is unreferenced for now and stays because this directory is shared with
+  # the owner's other apps.
   - ../_owners/yarn
   - flux.yaml
   - git-auth.sops.yaml       # read-only deploy key; the repo is private

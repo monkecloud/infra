@@ -32,33 +32,17 @@ spec:
     name: app
   targetNamespace: yarn-monke-app-dev
   serviceAccountName: deployer
-  # The only two things that differ between prod and dev. They live here, not on the dev
+  # The one thing that differs between prod and dev. It lives here, not on the dev
   # branch: the app repo's manifests stay identical on both branches, so a promotion only
-  # ever conflicts on the CI-written image tag, and this overlay is what makes dev a
+  # ever conflicts on the CI-written image tags, and this overlay is what makes dev a
   # different environment.
+  #
+  # The database used to be patched here too, on the monke-app Deployment's DATABASE_URL.
+  # It is not any more: that only ever reached one Deployment by name, so the app's api
+  # would have kept the production value in silence. Which database an environment uses is
+  # now ConfigMap monke-app-db, applied per namespace — missing it fails the pod loudly
+  # rather than pointing it at the wrong data.
   patches:
-    # The scratch database, not the production one. A strategic merge, so it matches the
-    # container and the env var by name — a positional JSON patch would silently rewrite
-    # the wrong variable the first time someone reorders the list.
-    - target:
-        kind: Deployment
-        name: monke-app
-      patch: |
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          name: monke-app
-        spec:
-          template:
-            spec:
-              containers:
-                - name: app
-                  env:
-                    - name: DATABASE_URL
-                      valueFrom:
-                        secretKeyRef:
-                          name: yarn-pg
-                          key: uri_dev
     # Its own hostname. Two Ingresses claiming one host would fight over a single
     # certificate, and cert-manager would issue for whichever asked last.
     - target:

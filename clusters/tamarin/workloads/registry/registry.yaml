@@ -1,0 +1,151 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: registry
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+  name: registry
+spec: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ports:
+  - nodePort: 30500
+    port: 5000
+    protocol: TCP
+    targetPort: 5000
+  selector:
+    app: registry
+  sessionAffinity: None
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: registry
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-09-07T10:12:51-04:00'
+      labels:
+        app: registry
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: registry
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - env:
+        - name: REGISTRY_HTTP_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: secret
+              name: registry-http
+        - name: REGISTRY_HTTP_ADDR
+          value: 0.0.0.0:5000
+        - name: REGISTRY_AUTH
+          value: htpasswd
+        - name: REGISTRY_AUTH_HTPASSWD_REALM
+          value: tamarin-registry
+        - name: REGISTRY_AUTH_HTPASSWD_PATH
+          value: /auth/htpasswd
+        - name: REGISTRY_STORAGE
+          value: s3
+        - name: REGISTRY_STORAGE_S3_REGION
+          value: garage
+        - name: REGISTRY_STORAGE_S3_REGIONENDPOINT
+          value: http://garage-s3-api.garage.svc.cluster.local:3900
+        - name: REGISTRY_STORAGE_S3_BUCKET
+          value: registry
+        - name: REGISTRY_STORAGE_S3_FORCEPATHSTYLE
+          value: 'true'
+        - name: REGISTRY_STORAGE_S3_V4AUTH
+          value: 'true'
+        - name: REGISTRY_STORAGE_DELETE_ENABLED
+          value: 'true'
+        - name: REGISTRY_STORAGE_REDIRECT_DISABLE
+          value: 'true'
+        - name: REGISTRY_STORAGE_S3_ACCESSKEY
+          valueFrom:
+            secretKeyRef:
+              key: accesskey
+              name: registry-s3
+        - name: REGISTRY_STORAGE_S3_SECRETKEY
+          valueFrom:
+            secretKeyRef:
+              key: secretkey
+              name: registry-s3
+        image: registry:2.8
+        imagePullPolicy: IfNotPresent
+        name: registry
+        ports:
+        - containerPort: 5000
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 5000
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /auth
+          name: auth
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: auth
+        secret:
+          defaultMode: 420
+          secretName: registry-auth
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: registry

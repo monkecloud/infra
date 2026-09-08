@@ -1,0 +1,341 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: cubesnail
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    tenant: friend
+  name: cubesnail
+spec: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cubesnail-user
+  namespace: cubesnail
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cubesnail-admin
+  namespace: cubesnail
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  - pods/log
+  - pods/exec
+  - pods/portforward
+  - services
+  - configmaps
+  - secrets
+  - persistentvolumeclaims
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - replicasets
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  - cronjobs
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - resourcequotas
+  - limitranges
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cubesnail-admin-binding
+  namespace: cubesnail
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cubesnail-admin
+subjects:
+- kind: ServiceAccount
+  name: cubesnail-user
+  namespace: cubesnail
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: cubesnail-quota
+  namespace: cubesnail
+spec:
+  hard:
+    limits.cpu: '4'
+    limits.memory: 8Gi
+    persistentvolumeclaims: '5'
+    pods: '15'
+    requests.cpu: '2'
+    requests.memory: 4Gi
+    requests.storage: 20Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cubesnail-limits
+  namespace: cubesnail
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    type: Container
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-ingress
+  namespace: cubesnail
+spec:
+  ingress:
+  - from:
+    - podSelector: {}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-egress
+  namespace: cubesnail
+spec:
+  egress:
+  - to:
+    - podSelector: {}
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: postgres
+  - ports:
+    - port: 3900
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: garage
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.42.0.0/16
+        - 10.43.0.0/16
+        - 192.168.2.0/24
+        - 169.254.0.0/16
+  podSelector: {}
+  policyTypes:
+  - Egress
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: redis
+  name: redis
+  namespace: cubesnail
+spec:
+  internalTrafficPolicy: Cluster
+  ports:
+  - name: redis
+    port: 6379
+    protocol: TCP
+    targetPort: 6379
+  selector:
+    app: redis
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: cubesnail
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: redis
+  serviceName: redis
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-09-07T04:50:02Z'
+      labels:
+        app: redis
+    spec:
+      containers:
+      - args:
+        - --requirepass
+        - $(REDIS_PASSWORD)
+        - --appendonly
+        - 'yes'
+        - --dir
+        - /data
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: cubesnail-redis
+        image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a "$REDIS_PASSWORD" ping
+          failureThreshold: 3
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a "$REDIS_PASSWORD" ping
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
+      storageClassName: local-path
+      volumeMode: Filesystem
+    status:
+      phase: Pending

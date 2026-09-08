@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - registry.yaml
+  - registry--registry-auth.sops.yaml   # htpasswd, one entry per tenant + admin
+  - registry--registry-http.sops.yaml   # REGISTRY_HTTP_SECRET, must be shared across replicas
+  - registry--registry-s3.sops.yaml     # Garage creds backing the blob store

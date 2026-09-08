@@ -44,3 +44,28 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+---
+# Workloads: the Postgres cluster, both tenants (namespace, RBAC, quota, LimitRange,
+# NetworkPolicies, Redis) and the internal registry.
+#
+# Depends on platform because the `pg` Cluster needs CNPG's CRDs to exist first.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: workloads
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform
+  interval: 10m
+  path: ./clusters/tamarin/workloads
+  prune: true
+  wait: true
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age

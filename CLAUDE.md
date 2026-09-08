@@ -544,6 +544,8 @@ good state hygiene and they break restore.
    console`; `terraform validate` and `fmt` both clean.
 4. Router port-forwards and DNS/DDNS.
 5. The GitHub repos themselves — GitHub is now a dependency; a local mirror is worth having.
+6. The Tailscale tailnet ACL policy — tag owners and route auto-approvers — once remote
+   access is switched on.
 
 ### Rebuild sequence
 1. Install XCP-ng, build the base VM template *(manual)*
@@ -702,6 +704,47 @@ crashloops)**. Note `s` fails on Garage — that image is distroless with no she
 Note `/bin/fish` is the shell here: unquoted bash heredocs (`<<EOF`) fail to parse. Use a
 quoted delimiter (`<<'EOF'`) or write the script to a file first.
 
+## Remote access — Tailscale subnet routers (written 2026-09-08, not yet enabled)
+
+`kubectl` and SSH are LAN-only today, which stops working the moment the cluster and the
+desktop are on different subnets. The answer is a **subnet router**: `tailscaled` in a pod
+advertising `192.168.2.0/24` to the tailnet, so an off-LAN machine reaches the API VIP, dom0,
+XO and the NodePorts without any of those hosts running Tailscale.
+
+- **Two replicas, which is Tailscale's own HA mechanism** — several devices advertising the
+  same route, with automatic failover between them (`Connector.spec.replicas: 2`, plus a
+  `ProxyClass` with required anti-affinity so they never share a node). A node loss costs
+  seconds of route failover and no manual action. The API path stays HA on top of that,
+  because kube-vip already moves `192.168.2.201` in ~8s.
+- **Routes advertised**: the LAN, plus the Service CIDR `10.43.0.0/16` so ClusterIP services
+  (`pg-rw`, Garage) answer directly from an off-LAN machine — no relay pod, no port-forward.
+  The pod CIDR is there commented out.
+- **Deliberately not `tailscaled` on the four VMs.** That gives four tailnet addresses and no
+  stable one, so `kubectl` would be pinned to a single node — a SPOF reintroduced on purpose.
+- **OAuth client, not an auth key.** Auth keys expire at 90 days maximum and a pod restarting
+  after expiry fails to re-authenticate silently; the operator mints its own short-lived keys
+  from an OAuth client instead. `./scripts/tailscale-oauth.sh` prompts for the credential and
+  writes it SOPS-encrypted, so it never passes through a shell argument or a chat window.
+- **The `tailscale` namespace carries no Pod Security labels on purpose.** A subnet router
+  needs `/dev/net/tun` and `NET_ADMIN`, which `baseline` forbids. Nothing else runs there and
+  no app can deploy into it.
+- **Enabling it is uncommenting two lines** — one entry in `platform/kustomization.yaml`
+  (operator + secret), one in `platform-config/kustomization.yaml` (the `Connector`, which
+  needs the operator's CRDs first). They are commented because `wait: true` on the platform
+  Kustomization means an operator that cannot authenticate would hold back platform-config
+  and workloads behind it.
+- **Friends are a later, separate step**: the operator's API server proxy in `auth` mode
+  gives them `kubectl` against this cluster with their tailnet identity impersonated into
+  Kubernetes — no LAN route and no kubeconfig to hand over. `apiServerProxyConfig.mode` is
+  `"false"` today.
+- **The tailnet ACL policy lives in Tailscale's admin console**, not in this repo: the tag
+  owners for `tag:k8s-operator` / `tag:k8s-router`, and the route auto-approvers without
+  which every rescheduled replica needs a manual approval click.
+- Chart `tailscale-operator` 1.102.3 from `https://pkgs.tailscale.com/helmcharts`, installed
+  as a k3s `HelmChart` CR like every other operator here. Both CRs were validated field by
+  field against that version's CRD schemas before committing, since they cannot be
+  `kubectl --dry-run`ed until the CRDs exist.
+
 ## Ingress HA — MetalLB VIP + replicated Traefik, built 2026-09-07
 
 Goal driving this: **any one of the hosts going down must not take anything down.** Public
@@ -816,11 +859,11 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
 - Cloudflare Tunnel for friend-hosted content — considered and not built. Friend sites are
   exposed the same direct way as the user's own (port-forward → Traefik → cert-manager), per
   the user's 2026-09-07 call. Revisit if a friend ever deploys something unaudited.
-- **Tailscale — no longer needed for deploys.** It was the blocking prerequisite for CI while
-  the plan was push-based (a hosted runner cannot reach `192.168.2.x`). Flux pulling from
-  GitHub removed that need entirely, and friends deploy by pushing to GitHub rather than by
-  reaching the cluster at all. Still genuinely open for **admin access** — `kubectl` and SSH
-  are LAN-only, so nothing works from outside the house. Not urgent.
+- **Tailscale subnet routers are written but not switched on** — the manifests are in the
+  repo and the entries in both kustomizations are commented out until an OAuth client
+  exists. See "Remote access" above. Deploys never needed Tailscale (Flux pulls from
+  GitHub); this is for admin access once the cluster and the desktop are on different
+  subnets.
 - **No sites are deployed, and none are tracked here** (user's call 2026-09-08 — the infra
   layer should not carry a list of websites). A site is its own repo; to publish one, see
   "Publishing a site" above and `clusters/tamarin/apps/README.md`.

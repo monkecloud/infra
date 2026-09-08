@@ -4,3 +4,5 @@ resources:
   - metallb-config.yaml       # ingress VIP pool 192.168.2.200, autoAssign false
   - cert-manager-issuer.yaml  # letsencrypt-prod
   - traefik-config.yaml       # HelmChartConfig: 2 replicas, VIP, retry middleware
+  # HA subnet routers. Needs the operator's CRDs, hence this layer rather than platform.
+  # - tailscale-router.yaml

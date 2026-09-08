@@ -1,0 +1,50 @@
+# The subnet routers themselves. Lives in platform-config because it needs the operator's
+# CRDs, which the platform Kustomization installs first.
+#
+# Two replicas advertising the same routes is Tailscale's own HA mechanism: the tailnet
+# picks one and moves to the other when it goes away. Node loss therefore costs seconds of
+# route failover, not an outage, and needs no manual action.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: ha-router
+spec:
+  statefulSet:
+    pod:
+      # Required, not preferred: two replicas on one node is not high availability, and with
+      # 4 nodes there is always somewhere else to put it.
+      # Label set here so the anti-affinity selects on something we own, rather than on an
+      # operator-internal label that could change between versions.
+      labels:
+        role: tamarin-subnet-router
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  role: tamarin-subnet-router
+              topologyKey: kubernetes.io/hostname
+      tailscaleContainer:
+        resources:
+          requests: { cpu: 50m, memory: 64Mi }
+          limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: tamarin-lan
+spec:
+  hostnamePrefix: tamarin-router
+  replicas: 2
+  proxyClass: ha-router
+  tags:
+    - tag:k8s-router
+  subnetRouter:
+    advertiseRoutes:
+      # The house LAN: the API VIP (192.168.2.201), the ingress VIP, dom0, XO, NodePorts.
+      - 192.168.2.0/24
+      # The Kubernetes Service CIDR, so ClusterIP services — pg-rw, garage — answer directly
+      # from an off-LAN machine without a relay pod or a port-forward.
+      - 10.43.0.0/16
+      # The pod CIDR. Uncomment if you want to reach individual pods by IP.
+      # - 10.42.0.0/16

@@ -1,0 +1,38 @@
+# Tailscale operator. It exists for one job today: HA subnet routers, so the LAN (the API
+# VIP, dom0, XO, NodePorts) stays reachable from off-LAN devices. The operator is also what
+# would later expose the Kubernetes API to friends without giving them a LAN route.
+#
+# The namespace deliberately carries **no Pod Security labels**. A subnet router needs
+# `/dev/net/tun` and `NET_ADMIN`, which `baseline` forbids. Nothing but the operator's own
+# proxies runs here, and no tenant can deploy into it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+---
+# Credentials are an OAuth client, not an auth key: auth keys expire (90 days maximum) and a
+# pod restarting after expiry would silently fail to re-authenticate. The operator mints its
+# own short-lived keys from this client instead.
+#
+# The Secret is pre-created (SOPS, in this repo) rather than passed as chart values, so the
+# client secret never sits in a HelmChart CR in plaintext.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: tailscale-operator
+  namespace: kube-system
+spec:
+  repo: https://pkgs.tailscale.com/helmcharts
+  chart: tailscale-operator
+  version: 1.102.3
+  targetNamespace: tailscale
+  valuesContent: |-
+    installCRDs: true
+    operatorConfig:
+      hostname: tamarin-k8s-operator
+      defaultTags:
+        - "tag:k8s-operator"
+    apiServerProxyConfig:
+      # Off for now. Turning this on ("true" for tailnet-identity impersonation) is what
+      # gives friends kubectl against this cluster without a LAN route or a kubeconfig.
+      mode: "false"

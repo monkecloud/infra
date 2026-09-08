@@ -674,9 +674,6 @@ exercise exists to prevent. Neither had ever been applied (no `.tfstate` anywher
 - **`scripts/point-kubeconfig-at-vip.sh` lost its automatic caller** — it ran from layer 20.
   It is now a manual step after Flux brings kube-vip up, documented in `terraform/README.md`.
   Easy to forget on a rebuild; the kubeconfig otherwise stays pointed at the init node.
-- Archive of the deleted layers: `/home/yarn/infra/_terraform-superseded-2026-09-08.tar.gz`
-  (25KB). `/home/yarn/infra` is **not** a git repo, so this was the only safety net — delete it
-  once the rebuild path has been exercised.
 - `terraform/README.md` rewritten to cover only the VM/bootstrap layer.
 - The local `gitops/` scaffolding was deleted; its useful parts are now in
   `monkecloud/infra/templates/` (the GitHub Actions workflow, and an example project

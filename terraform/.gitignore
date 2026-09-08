@@ -5,7 +5,7 @@ terraform.tfvars
 # Admin kubeconfig fetched by layer 10.
 kubeconfig
 
-# State holds generated secrets (k3s token, Garage RPC secret, Redis password) in
+# State holds generated secrets (k3s token, Garage RPC secret) in
 # plaintext. Treat these files the same way as CLAUDE.md: local only.
 *.tfstate
 *.tfstate.*

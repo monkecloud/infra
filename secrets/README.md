@@ -25,7 +25,7 @@ Until then this directory is a **recovery vault**: enough to rebuild, not yet li
 They are the ones a rebuild cannot regenerate correctly, because restored data or an
 external service has already seen them:
 
-- Tenant `*-pg` / `*-redis` / `*-garage`, and `pg-app` — restored Postgres carries these
+- Tenant `*-pg` / `*-garage`, and `pg-app` — restored Postgres carries these
   passwords inside it; regenerating would lock you out of your own data.
 - `letsencrypt-prod-account-key` — keeps your ACME account identity across rebuilds.
 

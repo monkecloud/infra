@@ -45,8 +45,8 @@ spec:
     secretRef:
       name: sops-age
 ---
-# Workloads: the Postgres cluster, both tenants (namespace, RBAC, quota, LimitRange,
-# NetworkPolicies, Redis) and the internal registry.
+# Workloads: the Postgres cluster and both tenants (namespace, RBAC, quota, LimitRange,
+# NetworkPolicies).
 #
 # Depends on platform because the `pg` Cluster needs CNPG's CRDs to exist first.
 apiVersion: kustomize.toolkit.fluxcd.io/v1

@@ -110,13 +110,19 @@ Two leftovers, deliberately not touched:
   - **Global services are the durable tier.** Anything that must survive is stored by a
     cluster-wide service that replicates itself across nodes — today **Postgres** and
     **Garage (S3)**. These are the only two things on the cluster that promise durability.
-  - **Tenant workloads are stateless.** No PVC, not even Longhorn. If a tenant needs to keep
+  - **Tenant workloads keep nothing durable.** No Longhorn. If a tenant needs to keep
     something, it goes into Postgres or the bucket.
-  - **Per-tenant Redis is explicitly best-effort.** It has a `local-path` PVC and appendonly
-    on, so it survives a pod restart, but it is one pod on one node: unavailable while that
-    node is down and *gone* if that node is lost. Not replicated, not backed up. It is a
-    cache / lock / rate limiter / rebuildable queue, and the tenant docs say so in exactly
-    those terms. The user's framing: "a 'hey sorry, I told you it wasn't persistent' kind of
+  - **Anything non-durable belongs to a repo, not to this layer** (user's rule 2026-09-08).
+    A cache — Redis today — is declared by the repo that wants one, in that repo's own
+    `k8s/`, so two repos in the same namespace each get their own and a repo that needs none
+    runs none. This layer provisions no caches at all; `templates/redis.example.yaml` is the
+    copy-paste starting point, and names in it are prefixed with the project name because a
+    namespace holds several projects.
+  - **Such a cache is explicitly best-effort.** A `local-path` PVC with appendonly on
+    survives a pod restart, but it is one pod on one node: unavailable while that node is
+    down and *gone* if that node is lost. Not replicated, not backed up. It is a cache /
+    lock / rate limiter / rebuildable queue, and the tenant docs say so in exactly those
+    terms. The user's framing: "a 'hey sorry, I told you it wasn't persistent' kind of
     thing."
   - New durable needs get added as a **global** service (a future Kafka-like event store was
     floated), not by giving a tenant workload a volume.
@@ -308,7 +314,7 @@ Disaster-recovery IaC for the whole stack: base template → VMs → k3s → ope
 ## Multi-tenant developer bundles — built 2026-09-07 (`cubesnail`, `yarn`)
 
 Both friend namespaces were turned into self-serve tenants that can develop against the
-shared infra (pg/garage, plus a Redis of their own) with scoped, non-admin credentials. Kits for handover live
+shared infra (pg/garage) with scoped, non-admin credentials. Kits for handover live
 in `/home/yarn/infra/tenant-kits/<tenant>/` (`repo/` is safe to commit; `CREDENTIALS.md`
 and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
 
@@ -319,15 +325,19 @@ and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
   revoke any role can connect to any database, so tenant isolation would be nonexistent. The
   `app` owner is unaffected (database owners hold CONNECT implicitly). Verified both ways.
   - Provisioning script: **`./scripts/pg-tenant.sh`** (also at `/root/pg-tenant.sh` on the k3s nodes). Idempotent; takes tenant name + password. Creates the role, `<tenant>` and `<tenant>_dev` databases, and does the `REVOKE CONNECT ... FROM PUBLIC` that makes the isolation real. Not yet expressed in Terraform — see the tenant gap noted above.
-- **Redis**: a **dedicated single-pod StatefulSet per tenant** in the tenant's own namespace
-  (`redis:7-alpine`, `--requirepass` from the tenant Secret, appendonly on, 2Gi `local-path`).
-  Deliberately not one shared Redis: a single Sentinel set has one password and no
-  per-tenant ACLs, so tenants would be able to read and `FLUSHALL` each other's keys. Single-pod (not HA) is a
-  deliberate fit with the "a few minutes of downtime is fine" philosophy.
+- **Cache**: none is provisioned for a tenant. A repo that wants Redis ships its own
+  single-pod StatefulSet (`templates/redis.example.yaml`) into its namespace, names it after
+  the project, and creates the `<project>-redis` Secret holding its password — the tenant
+  Role already allows Secrets, StatefulSets, Services and PVCs. Deliberately not one shared
+  Redis for the cluster: a single instance has one password and no per-tenant ACLs, so
+  tenants could read and `FLUSHALL` each other's keys. Single-pod (not HA) fits the "a few
+  minutes of downtime is fine" philosophy, and per-repo means a project's cache dies with
+  the project.
 - **Garage**: bucket `<tenant>-data` + bucket-scoped key `<tenant>-data-key`, same pattern as
   `monke-ca-key`.
 - **Secrets** (per namespace, consumed by Deployments via `secretKeyRef`, never hardcoded):
-  `<tenant>-pg` (incl. ready-made `uri`/`uri_dev`), `<tenant>-redis`, `<tenant>-garage`.
+  `<tenant>-pg` (incl. ready-made `uri`/`uri_dev`), `<tenant>-garage`. A per-repo cache
+  password is the repo's own Secret, not one of these.
 - **NetworkPolicy `isolate-egress` was rewritten** (both namespaces) from the old permissive
   version to genuine default-deny. Allowed: own namespace, kube-system DNS :53, `postgres`
   :5432, `garage` :3900, and the public internet **excluding** `10.42.0.0/16` (pods),
@@ -335,8 +345,8 @@ and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
   - The old policy's only exclusion was the pod CIDR, which left the **entire service CIDR
     and the whole home LAN reachable** from tenant pods — i.e. the kube API, cluster
     NodePorts, XO and dom0 SSH. That is what the rewrite closes.
-  - Verified with throwaway pods in each namespace: pg/own-redis/garage/DNS/internet ALLOW;
-    kube API, other tenant's Redis, dom0 :22, LAN NodePorts all BLOCK.
+  - Verified with throwaway pods in each namespace: pg/own-namespace/garage/DNS/internet
+    ALLOW; kube API, the other tenant's pods, dom0 :22, LAN NodePorts all BLOCK.
 - **RBAC**: the `<tenant>-admin` Role / `<tenant>-user` SA grant namespaced CRUD on
   pods/services/configmaps/secrets/PVCs/deployments/jobs/ingresses, plus `pods/exec`,
   `pods/portforward` and `policy/poddisruptionbudgets`. Kubeconfigs generated from the SA
@@ -385,12 +395,11 @@ and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
     it requires runAsNonRoot/seccomp/dropped-caps and would break stock images like
     `nginx:alpine`; it is set to warn/audit only, so the warnings on tenant pods are advisory.
   - Existing workloads were rollout-restarted to confirm they still admit under `baseline`.
-- **Terraform coverage is partial.** `30-workloads/tenants.tf` builds the namespace, SA,
-  Role + binding, ResourceQuota, LimitRange and both NetworkPolicies. Still missing from the
-  rebuild path: the per-tenant **Redis** StatefulSet, the tenant's **Postgres role and
-  databases** (`scripts/pg-tenant.sh` is not wired in), and the **registry**. A rebuild
-  therefore yields tenants who have a namespace and permissions but no cache, no database
-  role, and dangling image references.
+- **One rebuild gap remains.** Flux reproduces the namespace, SA, Role + binding,
+  ResourceQuota, LimitRange, both NetworkPolicies and the tenant Secrets, but the tenant's
+  **Postgres role and databases** are still created by hand — `scripts/pg-tenant.sh` is
+  wired into nothing. A rebuild therefore yields tenants who have a namespace, permissions
+  and a committed password, but no role to use it on.
 
 ## Container images — GHCR
 
@@ -521,7 +530,7 @@ This reverses the earlier "generated, not hardcoded" choice for the k3s token an
 secret, and the bucket script's "credentials never enter Terraform state" design. Those are
 good state hygiene and they break restore.
 
-- **Must be committed**: tenant `*-pg`/`*-redis`/`*-garage`, `pg-app`,
+- **Must be committed**: tenant `*-pg`/`*-garage`, `pg-app`,
   `letsencrypt-prod-account-key`.
 - **Can be generated**: k3s join token, Garage RPC secret, all operator PKI
   (`cnpg-ca`, `*-webhook-cert`, `pg-server`, `pg-replication`, `metallb-memberlist`,
@@ -603,15 +612,10 @@ byte-identical, nothing restarted.
 
 Now Flux-owned: ns `postgres` + the 3-instance `pg` Cluster; both tenants complete (namespace
 with its PSA labels, `<tenant>-user` SA, `<tenant>-admin` Role + binding, ResourceQuota,
-LimitRange, both NetworkPolicies, Redis StatefulSet + Service); the internal registry
-(ns, Deployment, Service, PDB); and the `placeholder` namespace.
-
-**The registry is in the rebuild path for the first time** — it was previously in no IaC at
-all, so a rebuild would have produced a cluster with no registry and every tenant image
-reference dangling.
+LimitRange, both NetworkPolicies); and the `placeholder` namespace.
 
 **The tenant secrets moved out of `secrets/` into the reconciled tree** beside the workloads
-that consume them — `*-pg`, `*-redis`, `*-garage` for each tenant. Verified afterwards that a
+that consume them — `*-pg`, `*-garage` for each tenant. Verified afterwards that a
 Flux-applied credential still authenticates
 (`psql` as `yarn` on `yarn_dev`) — re-applying a Secret with a changed value would silently
 break auth, so this is worth checking rather than assuming.
@@ -685,9 +689,8 @@ Nothing is backed up today. **User has no backup target machine yet** — `dt2` 
 | What | State |
 |---|---|
 | k3s etcd | **Partial.** k3s auto-snapshots every 12h, retention 5 (a k3s default, nobody configured it) — but every copy sits on the node VMs themselves at `/var/lib/rancher/k3s/server/db/snapshots/`. Covers a bad upgrade or corruption; worthless if the VMs are gone. |
-| k8s object state | **Mostly** — `terraform/30-workloads` reproduces it. Gaps below. |
+| k8s object state | **Mostly** — `clusters/tamarin/` in git reproduces it. Gaps below. |
 | Postgres | **Nothing.** |
-| Redis | **Nothing.** Per-tenant instances only, currently near-empty. User wants it backed up once it holds real data. |
 | Garage objects | **Nothing.** |
 | Whole VMs | **Nothing.** XO backup jobs need a remote and there is none. |
 
@@ -706,12 +709,12 @@ The usual answer is local for fast restore plus cloud for site loss; either alon
 2. **cert-manager secrets — cheap and high-value.** The ACME account key and issued certs are *not* in Terraform, and Let's Encrypt rate-limits reissues (5 duplicate certs per week per domain set). Losing them means the sites can come back but their certificates might not, for days. A periodic dump of the `cert-manager` namespace secrets plus the per-site TLS secrets is small and prevents a genuinely annoying outage.
 3. **Garage.** No native backup. Object-level `rclone sync` (or `aws s3 sync`) to the off-cluster target, as a CronJob. Restore needs `garage key import` so objects stay owned by their original key IDs — see the Garage notes above.
 4. **etcd.** k3s can upload its own snapshots: `--etcd-s3`, `--etcd-s3-endpoint`, `--etcd-s3-bucket`, `--etcd-s3-access-key`, `--etcd-s3-secret-key`. No cron or scripts needed and it registers `ETCDSnapshotFile` resources. Restore is `k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one node, then rejoin the rest. Worth being clear that **with the Terraform, etcd restore is not the primary recovery path** — rebuilding is cleaner. Its value is covering things created outside Terraform.
-5. **Redis** (user confirmed they'd want this once it holds persistent data). Each tenant runs a single-pod instance, so a CronJob per namespace running `redis-cli --rdb` against `redis-0` and shipping the RDB to the object store. There is no replica to offload the dump onto, so schedule it when the tenant is quiet. Password comes from Secret `<tenant>-redis`.
+5. **Per-repo caches: deliberately never backed up.** A repo's Redis is the best-effort tier by definition (see storage tiers) — if a repo would miss the contents, they belong in Postgres or the bucket instead, which is what the tenant docs tell them. A repo that genuinely wants its own RDB shipped somewhere can add its own CronJob; it is not this layer's job.
 6. **VM-level via XO.** Now viable again since the XO fix above. Add a remote (XO supports NFS/SMB/local/S3) and a delta backup job over the 4 k3s VMs plus the `tamarin-k3s-base` template. Coarse net and fast whole-node rollback. Note that a snapshot of a running Postgres is only crash-consistent — CNPG recovers via WAL replay, but the barman backup is the authoritative path, not this.
 7. **XO's own state.** `/home/yarn/xo-data/` on dt2 (see XO section). Small, and currently protected by nothing.
 
 ### Ordering rationale
-Postgres first because it's the only thing holding data that can't be regenerated from a git repo or a Terraform apply. cert-manager second because it's tiny and its loss causes a slow, rate-limited outage. Everything below that is either currently near-empty (Garage, Redis) or largely superseded by the Terraform (etcd, VM-level).
+Postgres first because it's the only thing holding data that can't be regenerated from a git repo or a Terraform apply. cert-manager second because it's tiny and its loss causes a slow, rate-limited outage. Everything below that is either currently near-empty (Garage) or largely superseded by the git rebuild path (etcd, VM-level).
 
 ## dt2 tooling
 
@@ -724,7 +727,7 @@ misbehaves. Cluster commands do not need to be wrapped in SSH; only dom0/XAPI wo
 
 **`./tamarin-status.sh`** (in this directory) prints a one-screen overview: nodes and their
 load, who currently holds each VIP, every Deployment/StatefulSet with ready counts, the health
-of Postgres/Garage/per-tenant Redis, anything not Running, and the Ingresses. Pass `--sites`
+of Postgres/Garage/any per-repo cache, anything not Running, and the Ingresses. Pass `--sites`
 to also curl each public domain. Read-only.
 
 **k9s** is the interactive equivalent (`sudo pacman -S k9s stern` — not installed yet):
@@ -861,8 +864,8 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
   of thing that would join Postgres and Garage in the durable tier if tenants need it. Kafka
   is the obvious name but is heavy for 4-core nodes (JVM, 3 brokers, ZooKeeper-or-KRaft);
   **Redpanda** (single binary, no JVM) or **NATS JetStream** (much lighter still) are the
-  realistic candidates at this size. Nothing needs one yet — don't build it on spec, which is
-  exactly how the shared Redis ended up unused.
+  realistic candidates at this size. Nothing needs one yet — don't build it on spec, which
+  is how a shared service ends up running for nobody.
 - tamarin-01's hardware issue is still unresolved (user checking physical console separately) — see possible sighting above. If/when it rejoins the Xen pool (a fresh `xe pool-join` — its old identity is gone), it needs its own k3s VM. Easiest path now is the Terraform one: add an entry to the `nodes` map in `terraform/10-vms/terraform.tfvars` with IP `.105` and set `k3s_token` to the running cluster's token so it joins rather than forming its own. The manual equivalent is `xe vm-copy` to its local-storage SR plus a cloud-init seed with the shared token above.
 - Cloudflare Tunnel for friend-hosted content — considered and not built. Friend sites are
   exposed the same direct way as the user's own (port-forward → Traefik → cert-manager), per

@@ -9,3 +9,6 @@ points to copy when a new project repo appears.
   path is needed.
 - `project-kustomization.example.yaml` — the `GitRepository` + `Kustomization` pair that
   makes Flux watch a project repo and apply it as the tenant.
+- `redis.example.yaml` — a single-pod Redis for one project repo. A cache belongs to the
+  repo that wants it, not to the namespace, so each project ships its own; the file explains
+  why it is best-effort and where its password comes from.

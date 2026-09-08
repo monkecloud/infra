@@ -5,8 +5,6 @@ resources:
   - cubesnail.yaml
   # Credentials each tenant's workloads consume. Encrypted; Flux decrypts on apply.
   - yarn--yarn-pg.sops.yaml
-  - yarn--yarn-redis.sops.yaml
   - yarn--yarn-garage.sops.yaml
   - cubesnail--cubesnail-pg.sops.yaml
-  - cubesnail--cubesnail-redis.sops.yaml
   - cubesnail--cubesnail-garage.sops.yaml

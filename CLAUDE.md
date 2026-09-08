@@ -333,6 +333,16 @@ and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
   tenants could read and `FLUSHALL` each other's keys. Single-pod (not HA) fits the "a few
   minutes of downtime is fine" philosophy, and per-repo means a project's cache dies with
   the project.
+  - **A cache URL needs `default` as the username**: `redis://default:<pass>@<name>:6379/0`.
+    The `redis://:<pass>@...` form sends an *empty* username, and a `requirepass`-only
+    server rejects it with `WRONGPASS` — which reads like a wrong password rather than a
+    malformed URL. Cost real time here: `redis-cli -a <pass>` answered PONG on the same
+    pod where `-u redis://:<pass>@...` failed.
+  - The shipped manifest satisfies the stricter **`restricted`** profile (runAsNonRoot 999,
+    `fsGroup: 999` for the volume, seccomp `RuntimeDefault`, all caps dropped), so it
+    admits with no PSA warnings at all. Verified end to end with the *tenant's own*
+    kubeconfig: Secret, StatefulSet, Service and PVC all created, pod Ready, PONG over the
+    Service from a second pod using the assembled URL. Then torn down again.
 - **Garage**: bucket `<tenant>-data` + bucket-scoped key `<tenant>-data-key`, same pattern as
   `monke-ca-key`.
 - **Secrets** (per namespace, consumed by Deployments via `secretKeyRef`, never hardcoded):

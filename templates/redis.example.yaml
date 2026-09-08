@@ -10,6 +10,10 @@
 # Nothing here is backed up or replicated. Use it as a cache, a lock, a rate limiter, or
 # a queue you can rebuild — anything durable belongs in Postgres or Garage.
 #
+# Connection URL: use `default` as the username — `redis://default:<password>@APP-redis:6379/0`.
+# The `redis://:<password>@...` form sends an empty username and a `requirepass`-only server
+# rejects it with `WRONGPASS`.
+#
 # The password lives in a Secret named APP-redis, key `password`. Either commit it
 # SOPS-encrypted in the project repo (needs the cluster age key), or create it once:
 #
@@ -49,8 +53,22 @@ spec:
       labels:
         app: APP-redis
     spec:
+      # Satisfies the stricter `restricted` Pod Security profile, so this pod admits
+      # without warnings. Redis runs fine as its own unprivileged uid; fsGroup is what
+      # gives it write access to the volume.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           image: redis:7-alpine
           args:
             - --requirepass

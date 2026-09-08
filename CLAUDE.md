@@ -452,9 +452,9 @@ What a friend receives. `repo/` is safe to commit into their app repo; `CREDENTI
   and the pod sits in `ImagePullBackOff`. That Secret does not exist yet.
 - **There is no kit template or generator yet** — `tenant-kits/` holds only the two
   per-tenant copies, and every change so far has been hand-applied to both. A
-  `tenant-kits/template/` plus a `new-tenant.sh` (mirroring `app-starter/new-app.sh`) is
-  the fix; deferred deliberately until the deploy model settles, since CI is likely to
-  change what a kit even contains.
+  `tenant-kits/template/` plus a `new-tenant.sh` that substitutes the tenant name is the
+  fix; deferred deliberately until the deploy model settles, since CI is likely to change
+  what a kit even contains.
 
 ## GitOps — Flux, bootstrapped 2026-09-08
 
@@ -748,22 +748,6 @@ crashloops)**. Note `s` fails on Garage — that image is distroless with no she
 
 Note `/bin/fish` is the shell here: unquoted bash heredocs (`<<EOF`) fail to parse. Use a
 quoted delimiter (`<<'EOF'`) or write the script to a file first.
-
-## App scaffolding — `/home/yarn/infra/app-starter/` (2026-09-07)
-
-`./new-app.sh <app> <namespace> [domain] [target-dir]` scaffolds an app repo that carries its
-own cluster context, so a fresh Claude session in that repo needs no briefing. This exists
-because **`/home/yarn/infra/CLAUDE.md` is only auto-loaded for sessions under that directory** —
-an app repo at `~/prg/whatever` starts knowing none of this.
-
-- `template/CLAUDE.md` — endpoints, the storage-tier policy, ingress/cert prerequisites.
-  Always loaded.
-- `template/.claude/skills/{deploy,troubleshoot}/` — procedures, loaded on demand. Carries the
-  hard-won gotchas: `REGISTRY_STORAGE_REDIRECT_DISABLE`, Ingress-rename certificate orphaning,
-  `logs --previous`, `local-path` node pinning.
-- Admin flavour (full kubectl, can create namespaces/roles/buckets). The restricted equivalent
-  for friends is `tenant-kits/`.
-- Edit `template/` and re-scaffold; don't edit generated repos or they drift.
 
 ## Ingress HA — MetalLB VIP + replicated Traefik, built 2026-09-07
 

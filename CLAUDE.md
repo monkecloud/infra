@@ -843,4 +843,20 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
   exactly how the shared Redis ended up unused.
 - tamarin-01's hardware issue is still unresolved (user checking physical console separately) — see possible sighting above. If/when it rejoins the Xen pool (a fresh `xe pool-join` — its old identity is gone), it needs its own k3s VM. Easiest path now is the Terraform one: add an entry to the `nodes` map in `terraform/10-vms/terraform.tfvars` with IP `.105` and set `k3s_token` to the running cluster's token so it joins rather than forming its own. The manual equivalent is `xe vm-copy` to its local-storage SR plus a cloud-init seed with the shared token above.
 - Cloudflare Tunnel for friend-hosted content (see `Friend hosting on k3s` memory) — not built; cubesnail.rip went the direct-exposure route instead per user's 2026-09-07 call, see above.
-- Tailscale for the admin/deploy plane — still not set up (kubectl/SSH are all LAN-only, no public exposure — that's fine as-is, just noting it's still open per the friend-hosting memory's security discussion).
+- **Tailscale — no longer needed for deploys.** It was the blocking prerequisite for CI while
+  the plan was push-based (a hosted runner cannot reach `192.168.2.x`). Flux pulling from
+  GitHub removed that need entirely, and a tenant's laptop reaches Postgres through the
+  in-namespace relay rather than the tailnet. Still genuinely open for **admin access** —
+  `kubectl` and SSH are LAN-only, so nothing works from outside the house. Not urgent.
+- **The sites are all torn down** (2026-09-08, user's call) — monke.ca, munke.biz and
+  cubesnail.rip serve nothing. They come back as per-project repos: create the repo, drop in
+  the `k8s/` from `tenant-kits/*/repo/k8s/`, add a `GitRepository`+`Kustomization` copied from
+  `templates/project-kustomization.example.yaml`. TLS Secrets were preserved, so this does not
+  have to re-issue certificates.
+- **No project repos exist yet.** `monkecloud/infra` is the only repo in the org.
+- **The rebuild path has never been run.** Every piece was verified individually — manifests
+  diffed byte-identical against live, Flux adoption caused zero restarts, a Flux-applied
+  credential authenticated — but that is not the same as a rebuild working end to end. The
+  four ⚠ manual steps in `REBUILD.md` are where it would most likely go wrong, precisely
+  because nothing automated catches a mistake there. Use the Let's Encrypt **staging** issuer
+  for any drill; production allows 5 duplicate certs per domain per week.

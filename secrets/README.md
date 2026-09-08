@@ -27,11 +27,7 @@ external service has already seen them:
 
 - Tenant `*-pg` / `*-redis` / `*-garage`, and `pg-app` — restored Postgres carries these
   passwords inside it; regenerating would lock you out of your own data.
-- `registry-*` — htpasswd, the shared `REGISTRY_HTTP_SECRET`, and the Garage creds
-  backing the registry's blobs.
 - `letsencrypt-prod-account-key` — keeps your ACME account identity across rebuilds.
-- `registry--registry-admin-password` — the registry's htpasswd holds bcrypt hashes, which
-  are one-way, so this plaintext cannot be recovered from the Secret that a rebuild restores.
 
 Site TLS certificates are deliberately **not** kept. Sites live in their own repos; when one
 lands, cert-manager issues its certificate from the Ingress in that repo. Nothing at this

@@ -7,8 +7,6 @@ resources:
   - yarn--yarn-pg.sops.yaml
   - yarn--yarn-redis.sops.yaml
   - yarn--yarn-garage.sops.yaml
-  - yarn--registry-creds.sops.yaml
   - cubesnail--cubesnail-pg.sops.yaml
   - cubesnail--cubesnail-redis.sops.yaml
   - cubesnail--cubesnail-garage.sops.yaml
-  - cubesnail--registry-creds.sops.yaml

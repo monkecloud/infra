@@ -364,63 +364,22 @@ and `kubeconfig-*.yaml` are mode-600 and must be handed over out of band).
   therefore yields tenants who have a namespace and permissions but no cache, no database
   role, and dangling image references.
 
-## Internal container registry — deployed 2026-09-07
+## Container images — GHCR
 
-Self-hosted registry so images can be shipped without an external service. Built when
-external registries were off the table.
+Images live in **`ghcr.io/monkecloud/<repo>`**, built by GitHub Actions using the per-run
+`GITHUB_TOKEN`. No registry to run, no credential to store, and nothing for a rebuild to
+recreate.
 
-**GHCR is now acceptable** (user reversed this 2026-09-08, when picking a CI model): if
-builds move to hosted GitHub Actions, the runner cannot reach `192.168.2.101:30500`, and
-pushing to GHCR is what removes the need to own a build runner at all. That leaves this
-registry's role narrowed to LAN-local pushes rather than being the only option — decide
-whether to keep it once the CI shape is settled, and note that tenant image references and
-`/etc/rancher/k3s/registries.yaml` on every node point here today.
+- **A private package needs a pull secret.** Packages built from a private repo default to
+  private, and the pod then needs an `imagePullSecret` (`ghcr-creds` by convention) or the
+  pull fails 401 → `ImagePullBackOff`. Making the package public is the simpler option for
+  something like a website image. **No `ghcr-creds` Secret exists in any namespace yet**, and
+  creating one needs a PAT with `read:packages` (the gh token on dt2 does not have it).
+- Nodes need no configuration for this — `ghcr.io` is a public host they can already reach,
+  unlike a LAN registry which needed `/etc/rancher/k3s/registries.yaml` on every node.
+- Always an immutable tag, never `:latest`: the tag is how rollback works, and a moving tag
+  means a restarted pod silently changes version.
 
-- **`registry:2.8` in namespace `registry`**, exposed as **NodePort `30500`**. Internal/LAN
-  only — no Ingress, no public exposure. Friends push over the tailnet.
-- **Storage is Garage, not a PVC** (bucket `registry`, key `registry-key`), consistent with
-  the stateless/no-PVC policy — Garage does its own replication.
-- **Auth**: htpasswd (bcrypt) with one user per tenant, in Secret `registry-auth`. Each tenant
-  namespace has an `imagePullSecret` named `registry-creds`.
-  - **No per-repository ACLs** — any authenticated user can push/pull any path. `/​<tenant>/` is
-    convention only. Harbor would fix this and is far too heavy for 4-core nodes; accepted.
-- **Canonical image prefix: `192.168.2.101:30500/<tenant>/<image>:<tag>`.**
-- **Admin account added 2026-09-07**: user `admin`, password in `secrets/registry--registry-admin-password.sops.yaml` (htpasswd entry appended
-  to Secret `registry-auth`; tenant entries preserved). For pushing your own images.
-  Pushing from dt2 needs `/etc/docker/daemon.json` containing
-  `{ "insecure-registries": ["192.168.2.101:30500"] }` then `systemctl restart docker` —
-  the registry is plain HTTP and Docker refuses it otherwise. **Not done yet (needs sudo).**
-- **Node config**: `/etc/rancher/k3s/registries.yaml` on all 4 nodes, then a rolling
-  `systemctl restart k3s`. k3s renders it to
-  `/var/lib/rancher/k3s/agent/etc/containerd/certs.d/<registry>/hosts.toml` — **not** into
-  `config.toml`, which is where you would look first and find nothing.
-  - The file names `192.168.2.101:30500` as the image host but lists **all four node IPs as
-    endpoints**, so pulls survive any single node being down even though the image name is
-    pinned to `.101`.
-  - k3s restarts leave `containerd-shim` processes alive, so running pods survive; no
-    cordon/drain was needed.
-- **The gotcha that cost the most time**: with the S3 storage driver the registry **302-redirects
-  clients to a presigned Garage URL**. Node containerd is on the host network and cannot resolve
-  `garage-s3-api.garage.svc.cluster.local`, so pulls failed with `lookup ... Try again` on every
-  node — while appearing to work on the one node that had already cached the layer. Fix is
-  **`REGISTRY_STORAGE_REDIRECT_DISABLE=true`**, which makes the registry stream blob content
-  itself. Any S3-backed registry serving host-network clients needs this.
-- Verified: push via skopeo, blobs land in Garage (8 objects), and a pull succeeds on all four
-  nodes. A test image `cubesnail/alpine:3.20` was left in the registry.
-- **Scaled to 2 replicas with required anti-affinity + a PDB, 2026-09-07.** Storage is Garage,
-  not a PVC, so the registry was already stateless and nothing else had to change — but one
-  thing did:
-  - **`REGISTRY_HTTP_SECRET` must be set and shared across replicas** (Secret `registry-http`,
-    key `secret`). A push is several HTTP requests — POST to start an upload, then PATCH/PUT —
-    and the upload state travels in the URL signed with this secret. Each replica generates a
-    random one if it is unset, so behind a round-robin Service a push whose requests land on
-    different pods fails with an "invalid state" error. It was unset here; scaling without
-    fixing it would have broken pushes intermittently and confusingly.
-  - Verified after scaling: three multi-layer `nginx:alpine` pushes through the ClusterIP
-    Service (which load-balances across both pods) all succeeded with matching digests and
-    pulled back cleanly.
-- **Not in Terraform.** `terraform/` has no registry resources at all — a rebuild produces a
-  cluster with no registry, and every tenant image reference would dangle.
 
 ## Tenant repo kits — `/home/yarn/infra/tenant-kits/<tenant>/`
 
@@ -442,8 +401,8 @@ What a friend receives. `repo/` is safe to commit into their app repo; `CREDENTI
   annotated), `dev/pg-relay.yaml` (the laptop Postgres path, separate kustomize target),
   and `deployment.yaml` — a container-image scaffold left commented out of the
   kustomization until they have an image to ship. All carry `imagePullSecrets:
-  registry-creds`; without it a pod pulling from the internal registry gets a 401 from the
-  node and sits in `ImagePullBackOff`.
+  ghcr-creds`, needed only when the GHCR package is private; without it the pull fails 401
+  and the pod sits in `ImagePullBackOff`. That Secret does not exist yet.
 - **There is no kit template or generator yet** — `tenant-kits/` holds only the two
   per-tenant copies, and every change so far has been hand-applied to both. A
   `tenant-kits/template/` plus a `new-tenant.sh` (mirroring `app-starter/new-app.sh`) is
@@ -534,8 +493,8 @@ This reverses the earlier "generated, not hardcoded" choice for the k3s token an
 secret, and the bucket script's "credentials never enter Terraform state" design. Those are
 good state hygiene and they break restore.
 
-- **Must be committed**: tenant `*-pg`/`*-redis`/`*-garage`, `pg-app`, `registry-auth`,
-  `registry-http`, `registry-s3`, `letsencrypt-prod-account-key`.
+- **Must be committed**: tenant `*-pg`/`*-redis`/`*-garage`, `pg-app`,
+  `letsencrypt-prod-account-key`.
 - **Can be generated**: k3s join token, Garage RPC secret, all operator PKI
   (`cnpg-ca`, `*-webhook-cert`, `pg-server`, `pg-replication`, `metallb-memberlist`,
   `k3s-serving`, node-password secrets) — nothing outside a fresh cluster has seen these.
@@ -623,9 +582,9 @@ LimitRange, both NetworkPolicies, Redis StatefulSet + Service); the internal reg
 all, so a rebuild would have produced a cluster with no registry and every tenant image
 reference dangling.
 
-**Eleven secrets moved out of `secrets/` into the reconciled tree** beside the workloads that
-consume them: the eight tenant `*-pg`/`*-redis`/`*-garage`/`registry-creds`, and the three
-`registry-*`. Verified afterwards that a Flux-applied credential still authenticates
+**The tenant secrets moved out of `secrets/` into the reconciled tree** beside the workloads
+that consume them — `*-pg`, `*-redis`, `*-garage` for each tenant. Verified afterwards that a
+Flux-applied credential still authenticates
 (`psql` as `yarn` on `yarn_dev`) — re-applying a Secret with a changed value would silently
 break auth, so this is worth checking rather than assuming.
 
@@ -656,12 +615,9 @@ A `REBUILD.md` was even written referencing a directory that existed on one mach
   so it still auto-loads for sessions rooted there while there is one copy.
   - Three were regenerated-at-install anyway: the XO login, the pool-wide host root password,
     and the k3s join token.
-  - The fourth needed real handling. **`registry-auth` stores htpasswd bcrypt hashes, which
-    are one-way** — a rebuild restores the Secret and the registry accepts the old admin
-    password, but nothing can derive it. Tenant passwords are unaffected because each
-    tenant's `registry-creds` holds `base64(user:password)`, which is reversible; nothing
-    pulls as admin, so admin has no `registry-creds`. The plaintext is now vaulted at
-    `secrets/registry--registry-admin-password.sops.yaml`.
+  - A fourth, the internal registry's admin password, needed special handling because
+    htpasswd stores bcrypt hashes and those are one-way. That became moot when the registry
+    was removed in favour of GHCR.
   - **Do not paste a real credential back into this file.** The two homes are
     regenerated-at-install, or SOPS-encrypted in this repo.
 

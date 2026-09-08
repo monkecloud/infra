@@ -1,5 +1,11 @@
 # One app in one environment. Overlays patch these when an app genuinely needs more —
 # a prod site with 2 replicas plus a cache fits in the defaults.
+#
+# limits.cpu is the tight one, and it binds during a rollout rather than at rest: 2 app
+# replicas at 500m plus a surge pod is 1500m, so the cache has 500m to fit in. That is why
+# templates/app-repo/k8s/redis.yaml asks for 250m and the Deployment pins maxSurge: 1. An
+# app that raises either will deadlock its own rolling update — the surge pod is refused
+# by this quota and the rollout waits forever.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

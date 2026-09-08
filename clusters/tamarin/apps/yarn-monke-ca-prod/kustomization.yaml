@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# This is what names the namespace: the base's Namespace object is renamed to this, and
+# everything else is stamped into it.
+namespace: yarn-monke-ca-prod
+resources:
+  - ../base
+  - flux.yaml
+  - git-auth.sops.yaml
+# The site talks to nothing, so no ../_owners/yarn — a namespace only gets credentials it
+# actually uses.

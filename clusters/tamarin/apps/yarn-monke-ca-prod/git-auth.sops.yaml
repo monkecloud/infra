@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: git-auth
+    namespace: yarn-monke-ca-prod
+stringData:
+    identity: ENC[AES256_GCM,data:A41GdQggO1HJhhEFsCalL5vzwGsu+vrxk+gd2zQlwDJ0RvRH3PTNnFD+f8N2BP28+AtVadO4+hob2tLQOTrG+VILlQK8wgllD5fJL7krWCfVB5NekVpC5uvfmvVCD2FrXf63T+fzojR6RHPnmwQ/yEaHU0aogKU=,iv:wnlqS02d5yYy86dOKBknMFnYeuMFVzkpwCJCCyzbV6E=,tag:MtUzKu0XuJ0XWzP2IWcUZA==,type:str]
+    identity.pub: ENC[AES256_GCM,data:7Ku7SZtGPPJanTEM7TXBA4jEulB//hOdmhEmGKWlgl5Lad5dq577ur0yDlWly5sT0/TVhleYGyR6eRWD+XWSiRfz3YAzgO0uYXSVj1iEvPOW,iv:+2L95e62hOnpl8+FklcxgNGyZu3HzVTVTJcgFOjqHKU=,tag:543JK4dwFOdkE04AqxeYcA==,type:str]
+    known_hosts: ENC[AES256_GCM,data:8eRe1EMMT2MRrfwy2DCJxz5ysbQ7QB/1mqqE5md4dWe+LsIkgA0UsBbaaRgkR1so2vBMYPj+6FgyfPlhs+Z+V87LD8qYgsLdnZDC4RhXRSZpteLFtJXoJmONyGEXuKOTrqcyoT5/Wux96mk1gWwzdO08C7O0TheH7x19TAVZI+bnTdrEQbtkUGqivPkUF49Y1DpoNycJpmYxD7Hozk3P9A5Dr+q+PbxUsNlI,iv:3/od0GZrdJI28FVowVns7fQDC0SagBV+mGbZ5NEh06g=,tag:dUfxpv0cmv5Bi2jTtrHROQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBsWWxDdGlHSUI0ZDRDRDRW
+            TVBpMXFNWnpxUElQVjM4K3crQkwzWEZESmtjCjB2WUhaanowUFNrMlJVelZzWTZF
+            L2N5ZzJJbFdEeXJoQVpYRFI5cHZrakkKLS0tIHVUdlZKRnVNYmdnb2UySGVLUURK
+            VTUvY3B2NFM3L0F0ZmlhRFZZaG41R1UKqPgAFftUaX4+wncjxZqQZvVUkjTRRG2k
+            Rdrk/5mjqKZfmAW5ztHo6w9u7t0Mclczwps/mvgoZIElIoY4dffEJA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-08T20:32:57Z"
+    mac: ENC[AES256_GCM,data:xeyLEMBH4eAOc8l5pXSkm91b6QTMF5RjOzeboRp0RJ2NAS/4wyNFGQSd3OmCdKuscMJSQk2dHnQFG0ZqZJq4SRDZqZ2u3XVHx64mSWXfS3pESQ1IWtR8u8uqSBRjn5UpIfTbjF8UNE2qBIPA3WH5fTch6o9suJWLJm/MAfGIx1o=,iv:qnXXyuojwStI3rUffeEEcHKjUKNNIuHM5mFUhKmr74w=,tag:pbK/LNh39RxxyEn0zGfUxw==,type:str]
+    version: 3.13.3

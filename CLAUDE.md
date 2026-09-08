@@ -891,7 +891,9 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
 - **No sites are deployed, and none are tracked here** (user's call 2026-09-08 — the infra
   layer should not carry a list of websites). A site is its own repo; to publish one, see
   "Publishing a site" above and `templates/project-kustomization.example.yaml`.
-- **No project repos exist yet.** `monkecloud/infra` is the only repo in the org.
+- **`monkecloud/monke-ca-site`** exists (private) holding the static source imported from the
+  old Garage tarball. It has no Dockerfile, `k8s/` or workflow yet, so nothing deploys it —
+  that is the next step for it.
 - **The rebuild path has never been run.** Every piece was verified individually — manifests
   diffed byte-identical against live, Flux adoption caused zero restarts, a Flux-applied
   credential authenticated — but that is not the same as a rebuild working end to end. The

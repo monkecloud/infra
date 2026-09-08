@@ -1,0 +1,21 @@
+# cp terraform.tfvars.example terraform.tfvars, then fill in.
+# terraform.tfvars is gitignored — it holds credentials.
+
+# Xen Orchestra login. Real values live in terraform.tfvars, which is gitignored.
+xoa_username = "CHANGEME@example.com"
+xoa_password = "CHANGEME"
+
+# Recommended. Without a key, every later SSH falls back to password auth, which on this
+# machine needs the SSH_ASKPASS workaround (no sshpass/expect installed).
+# ssh_public_key = "ssh-ed25519 AAAA... yarn@dt2"
+
+# Leave unset for a from-scratch rebuild — a fresh token is generated and exported as an
+# output. Set it only to join a node to the cluster that is already running.
+# k3s_token = "..."
+
+# SR UUIDs are pool-specific. After rebuilding the XCP-ng pool itself, re-read them with:
+#   ssh root@<pool-master> "xe sr-list type=ext params=uuid,name-label,host"
+# and override the nodes map here.
+
+# Root password for the node VMs. No default — it must not live in the repo.
+root_password = "CHANGEME"

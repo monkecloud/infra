@@ -1,0 +1,21 @@
+# Static addressing is deliberate: k3s pins each etcd member's peer URL to whatever
+# address the node had at join time, so a DHCP lease landing somewhere else breaks
+# etcd peering in a way that is annoying to recover from.
+#
+# Matched by MAC rather than interface name because systemd's Xen predictable-naming
+# scheme produces enX0 here, not eth0 — hardcoding a name is a known dead end.
+version: 2
+ethernets:
+  primary:
+    match:
+      macaddress: "${mac}"
+    set-name: enX0
+    dhcp4: false
+    dhcp6: false
+    addresses:
+      - ${ip}/${prefix}
+    routes:
+      - to: default
+        via: ${gateway}
+    nameservers:
+      addresses: [${nameservers}]

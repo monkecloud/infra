@@ -1,0 +1,118 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${hostname}
+prefer_fqdn_over_hostname: false
+preserve_hostname: false
+
+disable_root: false
+ssh_pwauth: true
+
+users:
+  - name: root
+    lock_passwd: false
+%{ if ssh_public_key != null ~}
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+%{ endif ~}
+
+chpasswd:
+  expire: false
+  users:
+    - name: root
+      password: ${root_password}
+      type: text
+
+# Baked into tamarin-k3s-base, installed here so a stock Ubuntu cloud image is equivalent.
+# Both are Longhorn prerequisites. Longhorn is not installed today; having them present
+# costs nothing and avoids a reboot-and-reinstall if it ever is.
+packages:
+  - open-iscsi
+  - nfs-common
+package_update: true
+
+write_files:
+  # k3s server options. This file has to exist before k3s first starts: tls-san only
+  # affects the apiserver serving certificate at generation time, and adding it later
+  # means regenerating that cert and restarting k3s on every node.
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0600"
+    owner: root:root
+    content: |
+      # k3s's built-in ServiceLB (klipper) is replaced by MetalLB in layer 20. Leaving
+      # both enabled makes them fight over the Traefik Service's external IP.
+      disable:
+        - servicelb
+      # The control-plane VIP (kube-vip, also layer 20). Without this SAN, kubectl
+      # against the VIP fails certificate verification even though the API answers.
+      tls-san:
+        - ${api_vip}
+
+  # The tamarin-k3s-base template ships k3s installed but neither started nor enabled,
+  # so the whole per-node cluster identity lives in this one env file. ensure-k3s-installed
+  # below covers the case where the image does not have k3s at all.
+  - path: /etc/systemd/system/k3s.service.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      K3S_TOKEN=${k3s_token}
+%{ if cluster_init ~}
+      K3S_CLUSTER_INIT=true
+%{ else ~}
+      K3S_URL=https://${server_ip}:6443
+%{ endif ~}
+
+%{ if !cluster_init ~}
+  # Makes the base template optional. tamarin-k3s-base ships k3s pre-installed, but if it
+  # is ever lost, any Ubuntu 24.04 cloud image works instead — this installs the pinned
+  # version on first boot. Skipped entirely when k3s is already present, so it costs nothing
+  # on a normal clone. INSTALL_K3S_SKIP_START/ENABLE because runcmd enables it below, after
+  # the config and env files are in place.
+  - path: /usr/local/bin/ensure-k3s-installed
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      if command -v k3s >/dev/null 2>&1; then
+        echo "k3s already present: $(k3s --version | head -1)"
+        exit 0
+      fi
+      echo "k3s not in image, installing ${k3s_version}"
+      export INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_ENABLE=true
+      export INSTALL_K3S_VERSION="${k3s_version}"
+      curl -sfL https://get.k3s.io | sh -
+
+  - path: /usr/local/bin/wait-for-k3s-server
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/bin/sh
+      # k3s would retry the join on its own, but waiting here keeps a failed
+      # bootstrap visible in cloud-init's log instead of buried in journalctl.
+      i=0
+      while [ "$i" -lt 120 ]; do
+        if curl -sk --max-time 5 https://${server_ip}:6443/ping 2>/dev/null | grep -q pong; then
+          echo "k3s server at ${server_ip} is up"
+          exit 0
+        fi
+        i=$((i + 1))
+        sleep 5
+      done
+      echo "timed out waiting for k3s server at ${server_ip}" >&2
+      exit 1
+%{ endif ~}
+
+runcmd:
+  - [ /usr/local/bin/ensure-k3s-installed ]
+%{ if !cluster_init ~}
+  - [ /usr/local/bin/wait-for-k3s-server ]
+%{ endif ~}
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, --now, k3s ]
+
+# Sealing the template zeroed machine-id and removed the host keys; regenerate per clone
+# so the four nodes don't end up sharing an identity.
+ssh_deletekeys: true
+ssh_genkeytypes: [rsa, ecdsa, ed25519]
+
+final_message: "cloud-init finished for ${hostname} after $UPTIME seconds"

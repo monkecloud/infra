@@ -92,6 +92,15 @@ A 5-host XCP-ng pool named **"Tamarin"** (hosts tamarin-01 through tamarin-05), 
     thing."
   - New durable needs get added as a **global** service (a future Kafka-like event store was
     floated), not by giving a tenant workload a volume.
+  - **Data in Postgres and Garage is never an infra-level concern** (user's rule,
+    2026-09-08). This layer provisions the *services* — the CNPG Cluster, the Garage
+    StatefulSet, buckets, keys, roles, databases — and stops there. What is stored inside
+    them belongs to backups, and to whichever repo produced it. That holds even when the
+    content looks infra-ish, like a website tarball in a bucket: still not this layer's
+    problem. Practical consequences:
+    - Do not record data volumes, object counts, or what a bucket happens to contain here.
+    - Do not keep site content, tarballs or per-site credentials at this level.
+    - Restoring content is a backup operation; publishing it is the site repo's CI.
   - Longhorn stays uninstalled. It only becomes justified for something stateful that has no
     replication of its own — and under this model that case should be rare, because durable
     things belong to global services that already replicate.
@@ -263,7 +272,9 @@ Disaster-recovery IaC for the whole stack: base template → VMs → k3s → ope
   - Those scripts prefer a local `kubectl` and fall back to running `kubectl` on a node over SSH, since dt2 has neither `kubectl` nor `terraform` installed as of writing (`sudo pacman -S terraform kubectl` — both are in `extra`).
   - `layout show` prints **16-char short node ids** while `node id -q` returns the full 64 — compare the prefix or the idempotency check never matches.
 - **Generated, not hardcoded**: k3s join token, Garage RPC secret. Fresh values are correct for a rebuild; each has a variable to override when matching a cluster that's still running (which is the case when adding a node). Postgres is untouched — CNPG generates `pg-app` itself.
-- **Garage-backed site Deployments set `wait_for_rollout = false`**: on a fresh rebuild the bucket exists but is empty, so the fetch initContainer fails and the rollout never completes. Pods sit in `Init` until `terraform/scripts/upload-site.sh` runs. That's the expected state, not a failure.
+- **A Garage-backed site's pods sit in `Init` until its content exists.** On a fresh rebuild the
+  bucket is empty, so the fetch initContainer fails and the rollout never completes. That is the
+  expected state, not a failure — content arrives from the site's own repo/CI, not from here.
 - State files, tfvars and the fetched kubeconfig are gitignored — they hold the same class of credentials this file does. `.terraform.lock.hcl` is deliberately **not** ignored.
 
 ## Multi-tenant developer bundles — built 2026-09-07 (`cubesnail`, `yarn`)
@@ -665,7 +676,6 @@ exercise exists to prevent. Neither had ever been applied (no `.tfstate` anywher
 - **`scripts/point-kubeconfig-at-vip.sh` lost its automatic caller** — it ran from layer 20.
   It is now a manual step after Flux brings kube-vip up, documented in `terraform/README.md`.
   Easy to forget on a rebuild; the kubeconfig otherwise stays pointed at the init node.
-- `scripts/upload-site.sh` is kept but now unreferenced.
 - Archive of the deleted layers: `/home/yarn/infra/_terraform-superseded-2026-09-08.tar.gz`
   (25KB). `/home/yarn/infra` is **not** a git repo, so this was the only safety net — delete it
   once the rebuild path has been exercised.
@@ -692,9 +702,9 @@ Nothing is backed up today. **User has no backup target machine yet** — `dt2` 
 |---|---|
 | k3s etcd | **Partial.** k3s auto-snapshots every 12h, retention 5 (a k3s default, nobody configured it) — but every copy sits on the node VMs themselves at `/var/lib/rancher/k3s/server/db/snapshots/`. Covers a bad upgrade or corruption; worthless if the VMs are gone. |
 | k8s object state | **Mostly** — `terraform/30-workloads` reproduces it. Gaps below. |
-| Postgres | **Nothing.** 61 MB total as of 2026-09-07. |
+| Postgres | **Nothing.** |
 | Redis | **Nothing.** Per-tenant instances only, currently near-empty. User wants it backed up once it holds real data. |
-| Garage objects | **Nothing.** One 250KB site tarball today. |
+| Garage objects | **Nothing.** |
 | Whole VMs | **Nothing.** XO backup jobs need a remote and there is none. |
 
 ### The constraint that shapes everything
@@ -710,7 +720,7 @@ The usual answer is local for fast restore plus cloud for site loss; either alon
 1. **Postgres — the one with a proper answer.** CNPG's `spec.backup.barmanObjectStore` (confirmed present in the 1.30 CRD on this cluster) does scheduled base backups **plus continuous WAL archiving**, which means point-in-time recovery to any second, not just "last night". Add a `ScheduledBackup` CR for the base-backup cadence and a `retentionPolicy` (e.g. `30d`). Restore is a new `Cluster` with `spec.bootstrap.recovery` pointing at the object store — so *Terraform rebuild + recovery bootstrap = full restore*, which is exactly the gap the Terraform leaves open.
    - Caveat for upgrades: the CRD also exposes a top-level `plugins` field, and CNPG is moving toward the Barman Cloud Plugin over the in-tree `barmanObjectStore`. In-tree works fine on 1.30; check this at upgrade time rather than assuming it stays.
 2. **cert-manager secrets — cheap and high-value.** The ACME account key and issued certs are *not* in Terraform, and Let's Encrypt rate-limits reissues (5 duplicate certs per week per domain set). Losing them means the sites can come back but their certificates might not, for days. A periodic dump of the `cert-manager` namespace secrets plus the per-site TLS secrets is small and prevents a genuinely annoying outage.
-3. **Garage.** No native backup. Object-level `rclone sync` (or `aws s3 sync`) to the off-cluster target, as a CronJob. Low stakes right now because the only content is a site tarball *derived* from a git repo — this gets important the moment Garage holds something not reproducible from elsewhere.
+3. **Garage.** No native backup. Object-level `rclone sync` (or `aws s3 sync`) to the off-cluster target, as a CronJob. Restore needs `garage key import` so objects stay owned by their original key IDs — see the Garage notes above.
 4. **etcd.** k3s can upload its own snapshots: `--etcd-s3`, `--etcd-s3-endpoint`, `--etcd-s3-bucket`, `--etcd-s3-access-key`, `--etcd-s3-secret-key`. No cron or scripts needed and it registers `ETCDSnapshotFile` resources. Restore is `k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>` on one node, then rejoin the rest. Worth being clear that **with the Terraform, etcd restore is not the primary recovery path** — rebuilding is cleaner. Its value is covering things created outside Terraform.
 5. **Redis** (user confirmed they'd want this once it holds persistent data). Each tenant runs a single-pod instance, so a CronJob per namespace running `redis-cli --rdb` against `redis-0` and shipping the RDB to the object store. There is no replica to offload the dump onto, so schedule it when the tenant is quiet. Password comes from Secret `<tenant>-redis`.
 6. **VM-level via XO.** Now viable again since the XO fix above. Add a remote (XO supports NFS/SMB/local/S3) and a delta backup job over the 4 k3s VMs plus the `tamarin-k3s-base` template. Coarse net and fast whole-node rollback. Note that a snapshot of a running Postgres is only crash-consistent — CNPG recovers via WAL replay, but the barman backup is the authoritative path, not this.

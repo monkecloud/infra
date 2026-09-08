@@ -10,7 +10,6 @@ cluster. Everything inside Kubernetes is Flux's job now and lives in
 | `scripts/garage-layout.sh` | Assigns and applies Garage's cluster layout. |
 | `scripts/garage-bucket.sh` | Creates a Garage bucket + a bucket-scoped key, writing the credentials into a Kubernetes Secret. |
 | `scripts/point-kubeconfig-at-vip.sh` | Repoints the fetched kubeconfig at the API VIP once kube-vip is up. |
-| `scripts/upload-site.sh` | Pushes a site tarball into a Garage bucket. Currently unreferenced. |
 
 The two Garage scripts stay here rather than becoming Flux Jobs by explicit decision: they
 are CLI-only operations against a running Garage, they already work and are idempotent, and

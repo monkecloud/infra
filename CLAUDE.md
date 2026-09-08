@@ -379,11 +379,15 @@ Images live in **`ghcr.io/monkecloud/<repo>`**, built by GitHub Actions using th
 `GITHUB_TOKEN`. No registry to run, no credential to store, and nothing for a rebuild to
 recreate.
 
-- **A private package needs a pull secret.** Packages built from a private repo default to
-  private, and the pod then needs an `imagePullSecret` (`ghcr-creds` by convention) or the
-  pull fails 401 → `ImagePullBackOff`. Making the package public is the simpler option for
-  something like a website image. **No `ghcr-creds` Secret exists in any namespace yet**, and
-  creating one needs a PAT with `read:packages` (the gh token on dt2 does not have it).
+- **A private package needs a pull secret**, and that is the path in use here: packages built
+  from a private repo default to private, and without an `imagePullSecret` the pull fails
+  `401 Unauthorized` → `ImagePullBackOff`. **`./scripts/ghcr-pull-secret.sh <namespace>`**
+  writes a `ghcr-creds` Secret into an app overlay, SOPS-encrypted; it prompts for a PAT
+  carrying only `read:packages` so the token never reaches a shell argument. The app repo
+  then references `imagePullSecrets: ghcr-creds` — the credential is applied from this repo,
+  never carried in the app's.
+  - The `gh` token on dt2 has no `read:packages` scope, so package visibility cannot be read
+    or changed from here at all; that is a web-UI action.
 - Nodes need no configuration for this — `ghcr.io` is a public host they can already reach,
   unlike a LAN registry which needed `/etc/rancher/k3s/registries.yaml` on every node.
 - Always an immutable tag, never `:latest`: the tag is how rollback works, and a moving tag
@@ -876,12 +880,13 @@ The rebuild path now reproduces the HA setup rather than the pre-VIP single-node
 - **No sites are deployed, and none are tracked here** (user's call 2026-09-08 — the infra
   layer should not carry a list of websites). A site is its own repo; to publish one, see
   "Publishing a site" above and `clusters/tamarin/apps/README.md`.
-- **`monkecloud/monke-ca-site`** exists (private) holding the static source imported from the
-  old Garage tarball. It has no Dockerfile, `k8s/` or workflow yet, so nothing deploys it —
-  that is the next step for it.
-- **The rebuild path has never been run.** Every piece was verified individually — manifests
-  diffed byte-identical against live, Flux adoption caused zero restarts, a Flux-applied
-  credential authenticated — but that is not the same as a rebuild working end to end. The
+- **The rebuild path has never been run**, though the *deploy* path now has. A real app was
+  taken from an empty repo to a public HTTPS site without a single `kubectl apply`: CI built
+  and committed the tag, Flux cloned the private repo over its read-only deploy key, applied
+  the manifests as the namespace's `deployer` ServiceAccount, and cert-manager issued the
+  certificate. So `apps/base`, the overlay pattern, namespace-local impersonation, the deploy
+  key and the pull secret are all exercised rather than merely written. A full rebuild from
+  bare metal is still untested. The
   four ⚠ manual steps in `REBUILD.md` are where it would most likely go wrong, precisely
   because nothing automated catches a mistake there. Use the Let's Encrypt **staging** issuer
   for any drill; production allows 5 duplicate certs per domain per week.

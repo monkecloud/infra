@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# This is what names the namespace: the base's Namespace object is renamed to this, and
+# everything else is stamped into it.
+namespace: yarn-monke-app-dev
+resources:
+  - ../base
+  # yarn's Postgres role and Garage key. The app has no code using them yet, but its
+  # manifests already reference the keys, so the Secrets have to exist or the pods sit in
+  # CreateContainerConfigError.
+  - ../_owners/yarn
+  - flux.yaml
+  - git-auth.sops.yaml       # read-only deploy key; the repo is private
+  - ghcr-creds.sops.yaml     # the GHCR package is private, so the pod needs a pull secret
+  - redis-password.sops.yaml # the cache this repo runs; a different password per namespace

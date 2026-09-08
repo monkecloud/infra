@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: git-auth
+    namespace: yarn-monke-app-prod
+stringData:
+    identity: ENC[AES256_GCM,data:bBZgn92+vtESTRMH4N2R+etesRSl0JyAJMvQT3LqRK3clqH2gU8W+3BHVeRlj1o0r4sxdAwvAI10fHKcazVHG61YmjjgU+m9zL3NBOJ5BMtdGp/ERaHI8TWPBHH0q6+tUl4rVRw6r+8PEa1zX2Gpgvst3u2YGY3+rhJwsanpzrKR70ooDtEsRgiuaqVbQockKtyS9AUIu9CVhly7IF4PNoKrnpy9Lu1pMi7bnWwGbOsmR8l9EgUECmt43vGvu/4wmkr+mTPcJDrfsqldCB1TSfMdUuek1ZFD9jt882K0TWDbzYmOhIOhNDTvIADSqiiF1Lit4XOrsvgFFvBhUkRFVI3AJ4Y/Avp7/O13NKCiCXjngQEXRXM2xI3esBxcvwC97ygwAG6jIPha6Fx4CMc5Xaj6ZnHMEyLHWsKB9cbiDrfE+Ah+vsyI+AI8NSb+P6pIu07nQx6ZUxnHQsLc6xXk3tv8AgrTdmsVbINOoIycAKKaPQynYtbZaI5h1aT0LLXpADO+IpM+/OgorkiK9MZJX7Fh7ow84wkGFHOohHbXOkOMf83gFa6D3LKKNBc+Y/wI,iv:CqsYAVTxwDOLtQre8l/3L8fBPaoQc/u1Jjis92LLzOg=,tag:jis3JJW/PteiADhyZGernA==,type:str]
+    identity.pub: ENC[AES256_GCM,data:a+X2zkRtIhA4A6od8Bn4KOdc947c4hO3bS660oSpeIX+Eis4g6O7CNKz1bDccsObsMag3vahi/LvUglduNURJ6M/6j0r3OhHtZvCC4rznCxxhwJ3/Aqe/obBiJGoZ6D0Lox6NE/JBNYLC/Js9Jy1ybF6xck=,iv:Cby1kDp/rRZxhU7gADMjTidxjB6x3cuOrUws5Urgj40=,tag:fq0vdLMrzNqRtbJ5ZLQ1tQ==,type:str]
+    known_hosts: ENC[AES256_GCM,data:b9nUeB/zP2MXc+UrHHXHySZl4uO8warZXE4IxYh5S9FmykAT7iTcY5iBvBsw79NfMC09PKyR7hUcHfWNBQwjtFUEoGZSjBsQYWIejuo96Kiind8pOrSf9+9dikMOGLvckDs2CYpz007Pyljzsd8sHtggUVmnpcXYwY+X5dHYv3l4rZqkTYhnCLhD8QZ8Z1XSMl7ZDIQgk5Xm+wCrkrgywcxQz7IV3lj29Iy/Mg==,iv:9dlKTaxoX9Vcc3/p0/2tjRfaa9n6QtK4Jk0/2TmMjJY=,tag:2n9hsJX6b2BucnpAR+QDvA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6REUwRTRGWGJxVEIrQ2Ri
+            TDg3bXlrcnhjUmd5d2xsc3lvcWNPRGNUY3hVCklGUmpqb3lqMHI4SjJTaFNraGN5
+            azBJNUdNMGxpeE1abW4xNUFwS0VuOGMKLS0tIDlFWVpQaHR2eE9VVFF3YlpCOWFZ
+            bExmT0RLQ3BOTmNqVC9WRC9LZXMrKzgKiww6ZDFniIvhvGIe87NW3D4jy0H8gRga
+            g2bFwJmvTFaMrYIOTHbF06NnjPEeLsXVXbyD8dBPYKkvZQYA0qUq6g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-08T20:48:30Z"
+    mac: ENC[AES256_GCM,data:Z2e8qq/4FbPrfv8/0tjgYr/mryEHiDgSvZkkI6HLXD4MVyf3YTIoYW9GJXBTHm7vWT85CQtnEPLwxeHOrmXE+fYSp6sNGrSeJM5zklAxIivbAo4O5WAiMYowj8zEscDTDTkBu5vu2T7FjFcd4HrBMD4qDY02TIa1du1Ns9ZDyig=,iv:i2bIEMvvfe0C1WuRKZBjPV8tUqSLzxbpC98loi2YQZE=,tag:3ec+rHCeIakgdCm62MfFIw==,type:str]
+    version: 3.13.3

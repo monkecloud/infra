@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: ghcr-creds
+    namespace: yarn-monke-app-dev
+type: kubernetes.io/dockerconfigjson
+data:
+    .dockerconfigjson: ENC[AES256_GCM,data:dnO2oh2vagBsLLw76fdpQzlojoDvA6zxORZMUXyqCmbQfDB1Pz0uQOPkRS2OHm3ZenpUSDRWg0og/qRgmWb2boAYCzk1fnyymSbiq8pfSaKpFM1vAsNJxaPXHkK+HPIC+uPiPfAbQaMkGxYNUFEZLAZkr/O175yOhPPoLh+rskxlkM6m,iv:4PHUrN5F7vB0BSxl2x4BtWwNy7GCUnq6I3V+fIKiUT0=,tag:jx3JC4/1pQ+2IGT/lljwKQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRUXBHTzU1UUJ0aU9LK3U0
+            QzM3TW5WcWFDblU0TXQyZERYbjRMeWozQ1M4Ck5OTGt1R2MxWVpEemRNZ3BncXJB
+            WktzdFdLUncvTGYvSEVGRUduVmF3WUEKLS0tIFU5WDJ1MlM4OTlQQmZicTVUMjR5
+            OVl3eVBKSWlMRDE2ZTl5MS9NNnh6Z2sKsfG7el+r7PboS9MBsqedjwuixgZgSkX2
+            AbLQIJrYAqIHDVCu3NEfpof3sA1R7TkLfkI8iIXmd4QDAw7gMdY0kw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-08T20:48:50Z"
+    mac: ENC[AES256_GCM,data:wlQp7XjRVZeWuGS2XJZpKjA4xy9CHeAx36xpJJH79elXF3V0tEkbEz5FNP/WaZmRJgCIOMZ4yJkIDYtML+Z0bwMXQVyKZDoykq7bOAuYWgSmV2LBAkg/dubEnQ+fd103oKD4O04pl1qH2YWO0katrsBU1nQoEHoQ+BAoSy9NJ2U=,iv:U3GxblBCb+RSwmYyEYoBhUzF+rgJipOZJsljwOWlcV4=,tag:2On6039V4NDTEezwyoIyeQ==,type:str]
+    version: 3.13.3

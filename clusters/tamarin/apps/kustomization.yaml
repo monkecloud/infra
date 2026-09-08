@@ -5,3 +5,5 @@ kind: Kustomization
 # directory under clusters/tamarin. See README.md for what an entry looks like.
 resources:
   - yarn-monke-ca-prod
+  - yarn-monke-app-prod
+  - yarn-monke-app-dev

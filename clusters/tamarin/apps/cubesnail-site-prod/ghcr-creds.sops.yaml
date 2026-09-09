@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: ghcr-creds
+    namespace: cubesnail-site-prod
+type: kubernetes.io/dockerconfigjson
+data:
+    .dockerconfigjson: ENC[AES256_GCM,data:bjrbA/dT6DUmV02wO25mDl9u27SODXsU/UIAZgalQR6CtbS4ZQ4+yFjZW4cNk6c26tX8kdS522ieGwV7wrcI45kQIekTa3tiklvUGMAqQKton7dxv1usCP74AQj5cit+cIowrCO4x/FzCo/0ofCDMG+NJNelUtvAaVxC/6kwqNIE2Ai9,iv:yf55S6jBRlE0Th06JraZatXC6qgyX8vc0HwZkuOKcaA=,tag:MgNFiv0819qlBc+UFh4amw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBBVUlGNlRuNWMyRWxuN1Bz
+            YzRMQml1TmwyK0MyL2tTUzZha0JxUWJGU0NNCnVDaVlzbWE1N3hOQWMrTlpaZFpj
+            c1lSNGRzM09GTXJEcTl0TVpWS3hwb2sKLS0tIEtRMGhyL0RnSElBbXVReS9ydEwr
+            K1pLS2hIdjVvalFianRTamZ2QlllamsK3W5Yw8+iaKQo8JaXqoHZITE/LTKNOt1P
+            ew3vmRBCX3zjxyG03hAxYq5q4SRlx4N3emT2U1GuuHfZIOHzG9HfGw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T18:49:43Z"
+    mac: ENC[AES256_GCM,data:YvOnvlBmrV+letyENSwrG+3PAX4XZMcwOz955L28fBPiAZSa43Az+cPfonhhCGZyoSYkeyuYbjgmf1EdEw5S1hSIaQhBvn2qCvAZZnA8mdnJ7cxVKdLhOSHkWZ4ECSc2t8WTMydUHcPNaW2pHxdDMiz1/8gmIljhb/H/k3NIxwY=,iv:wzdgrx/SaOy8u6vURWcy2QBiaU1kQdWIYWVPQIRMNNM=,tag:dPPfyrJq0F4b5C1QU/NAYA==,type:str]
+    version: 3.13.3

@@ -7,6 +7,6 @@ resources:
   - ../base
   - flux.yaml
   - git-auth.sops.yaml
-# The GHCR package is public, so no ghcr-creds pull secret is needed. The site talks to
-# nothing else either, so no ../_owners/cubesnail — a namespace only gets credentials it
-# actually uses.
+  - ghcr-creds.sops.yaml   # the GHCR package is private, so the pod needs a pull secret
+# The site talks to nothing, so no ../_owners/cubesnail — a namespace only gets credentials
+# it actually uses.

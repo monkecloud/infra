@@ -9,8 +9,4 @@ resources:
   - flux.yaml
   - git-auth.sops.yaml     # read-only deploy key; the repo is private
   - garage.sops.yaml       # this environment's own bucket, and a key scoped to it
-  # ghcr-creds.sops.yaml doesn't exist yet — the GHCR package is private, so the pod needs
-  # a pull secret, but generating one needs a PAT entered interactively
-  # (./scripts/ghcr-pull-secret.sh cubesnail-rockon-dev). Add this line back in once that
-  # file exists, or the pod sits in ImagePullBackOff.
-  # - ghcr-creds.sops.yaml
+  - ghcr-creds.sops.yaml   # the GHCR package is private, so the pod needs a pull secret

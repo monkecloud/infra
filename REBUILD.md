@@ -114,7 +114,9 @@ easiest step to miss.
 ./scripts/garage-bucket.sh    # once per bucket
 ```
 
-Needed: `yarn-data`, `cubesnail-data`, and any per-app buckets.
+Needed: `cubesnail-data`, and one bucket per app-environment that wants object storage
+(`yarn-monke-app`, `yarn-monke-app-dev`), each with its own bucket-scoped key. There is
+no `yarn-data`: yarn's buckets are per app-environment.
 
 Restoring instead of starting fresh? **Do not let this generate new keys.** Restored objects
 are owned by the original key IDs. Import the committed ones:

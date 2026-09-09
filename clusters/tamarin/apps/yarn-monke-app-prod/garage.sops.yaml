@@ -1,0 +1,33 @@
+# This environment's own Garage bucket, and a key scoped to just that bucket. Per namespace
+# rather than shared from ../_owners/yarn on purpose: one key per app-environment means dev
+# cannot read or delete prod's objects, which the owner-wide yarn-data-key could not offer.
+#
+# The bucket and the key are Garage CLI objects with no Kubernetes representation, so they
+# are created out of band; this file is the only place their credentials are recorded.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: monke-app-garage
+    namespace: yarn-monke-app-prod
+type: Opaque
+stringData:
+    access_key: ENC[AES256_GCM,data:1zMJDPsxfbHsWAecPgIXoFK4GVEBbrZmqT0=,iv:Wjm9ao4A5Puempwo8YdNKNHd+K5ChA8fAT0EWE9VNhM=,tag:ivzdTJsUkri5uMUiUQLRBA==,type:str]
+    bucket: ENC[AES256_GCM,data:DCf2VAkMmCE3bb5H9dQ=,iv:hfzWcHIxFdNitju3kTh46gtSBJE3T7KqF8GU3Qhqhx8=,tag:Y5cYXi2YoIdG09NpVq8gGQ==,type:str]
+    endpoint: ENC[AES256_GCM,data:nd0oaaTZCSfy25s5gfRUIvRF5XWpNhoTu9oQy44xTL3ut5W1/xudYsut0ax8aTyGu8A=,iv:tuPTWCbvZpotIax2puuGW+hwr92EWzfJ8M9MAssG1W8=,tag:oZVvX2JlKJ1OmwlXo7akPA==,type:str]
+    endpoint_external: ENC[AES256_GCM,data:Suz5EOBtKHYcX4YRmm/FrALTpCR+EOksvkM=,iv:tw/ZZul4DA6n0DxWLuzwV3A0pR0q2521OAM5IEFz0Ms=,tag:uXw+D0yqfxzHBnq/lN8Q3w==,type:str]
+    secret_key: ENC[AES256_GCM,data:2Pif2Jf4s5a9RU4k4jw3CJ7X+ifvRmuo40iHZSl8WtwEJ++Jj22L8YD0C5zpeNMLKthEv1WqDHWx2ekqNqi27g==,iv:viI013LWOoKy4eig38UfaSMMJHFXbyrXggn1r77jMJs=,tag:nBP6P7aQd96jmjp0u8wAjg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxVkRJeGNSekhENStYRHQx
+            elg4NWtjMDRUeExNV3dwR3hVMkpsRUR1aHhFClo0a0tpME96Vkpjd0tPajN3UnBQ
+            NkdVOEYzVFBId0hjRzFYTml0Q1dmaGsKLS0tIDRLeFZqdU9PSGRPbTR3bjVSOFY3
+            UmtDN2Y4OWRrOTNNbDQrbURuSUdUazQKzZdJDSzm5XnBh4k3YgapjOW7Y7zuo7/3
+            vIPqNgLa74TodzHN4nszU3JAuxF/bB7S5x4J+sd1/EY7lYWCpOdlkA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T00:43:13Z"
+    mac: ENC[AES256_GCM,data:7tqFrl46tGSCCToUOAsJogjL+uWZbs8tCfnzg+pAjeKw6Bo2H+duQ8oJ1+VVjOVQaHWZ3aXT0lAHOoP823ll7yX5ehy9QLgms0nUNI28nZbCHoL4fUP91hJXQOE+9lFTJVTmI6gDQWTGxnWxLqqlqTc3KfaCyPZGC34VCpNN/W4=,iv:OfrczFANBdfJ0NBnJPDIAoIBXAOhWc5jMgTVsoQxqeA=,tag:09rXRtVW0tMACxc4St8y1Q==,type:str]
+    version: 3.13.3

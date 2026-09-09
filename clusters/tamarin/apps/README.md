@@ -86,14 +86,30 @@ only apply what that Role already allows.
 ## What an app gets
 
 - Its own namespace, quota and network policy.
-- The owner's Postgres credentials as Secret `<owner>-pg` and Garage credentials as
-  `<owner>-garage`. Prod uses the `uri` key, dev uses `uri_dev`.
+- The owner's Postgres credentials as Secret `<owner>-pg`. Prod uses the `uri` key, dev
+  uses `uri_dev`.
+- Object storage only if it asks for it, and then per app-environment rather than per
+  owner: its own Garage bucket plus a key scoped to that one bucket, committed as
+  `garage.sops.yaml` in the app's own overlay. That is what keeps dev from reading or
+  deleting prod's objects — an owner-wide key cannot draw that line, so there is no
+  `<owner>-garage` any more.
 - Nothing else. A cache is the app repo's own business — see
   `templates/app-repo/k8s/redis.yaml`.
 
-Apps that outgrow the shared database or bucket can have their own without a new
-credential: a CNPG `Database` CR owned by the same role, or
-`garage bucket allow --read --write <bucket> --key <owner>-data-key`.
+Apps that outgrow the shared database can have their own without a new credential: a CNPG
+`Database` CR owned by the same role.
+
+Giving an app a bucket is two Garage commands and one committed Secret:
+
+```bash
+garage bucket create <owner>-<app>-<env>
+garage key create <owner>-<app>-<env>-key
+garage bucket allow --read --write <owner>-<app>-<env> --key <owner>-<app>-<env>-key
+```
+
+Then put the key id, secret, bucket and endpoint in `<owner>-<app>-<env>/garage.sops.yaml`
+as Secret `<app>-garage`, and list it in that overlay. Buckets and keys have no Kubernetes
+representation, so that file is the only record of the credential.
 
 ## Secrets
 

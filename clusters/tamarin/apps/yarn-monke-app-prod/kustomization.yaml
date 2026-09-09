@@ -5,12 +5,12 @@ kind: Kustomization
 namespace: yarn-monke-app-prod
 resources:
   - ../base
-  # yarn's Postgres role and Garage key. The api connects with the Postgres one; the
-  # Garage key is unreferenced for now and stays because this directory is shared with
-  # the owner's other apps.
+  # yarn's Postgres role. No Garage key here any more: this app has its own bucket and a
+  # key scoped to just that bucket, per environment, in garage.sops.yaml below.
   - ../_owners/yarn
   - flux.yaml
   - git-auth.sops.yaml       # read-only deploy key; the repo is private
   - ghcr-creds.sops.yaml     # the GHCR package is private, so the pod needs a pull secret
   - redis-password.sops.yaml # the cache this repo runs; a different password per namespace
   - db-name.yaml             # names this environment's own Postgres database
+  - garage.sops.yaml         # this environment's own bucket, and a key scoped to it

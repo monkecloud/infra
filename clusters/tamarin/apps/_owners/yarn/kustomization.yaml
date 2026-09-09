@@ -1,9 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# This person's shared credentials — the Postgres role and the Garage key they own. An
-# app overlay lists this directory, and its `namespace:` puts a copy in that app's
-# namespace. Secrets do not cross namespaces, so each app namespace gets its own copy of
-# the same value.
+# This person's shared credentials — the Postgres role they own. An app overlay lists this
+# directory, and its `namespace:` puts a copy in that app's namespace. Secrets do not cross
+# namespaces, so each app namespace gets its own copy of the same value.
+#
+# No Garage key lives here. A bucket and its key are per app-environment, so the app's own
+# overlay carries them (see yarn-monke-app-*/garage.sops.yaml) and dev cannot reach prod's
+# objects. An owner-wide key could not draw that line.
 resources:
   - pg.sops.yaml
-  - garage.sops.yaml

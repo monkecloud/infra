@@ -222,6 +222,11 @@ What this layer provides, once, for all of them:
   at `clusters/tamarin/platform-config/cert-manager-issuer.yaml`.
 - Traefik itself is a **k3s-bundled chart** — only its `HelmChartConfig` is ours. See the
   platform README in the repo.
+- **HTTP redirects to HTTPS cluster-wide**, on the `web` entrypoint
+  (`entryPoints.web.http.redirections.entryPoint`) in that same `HelmChartConfig`. A site
+  repo therefore gets the redirect for free and cannot forget it. HTTP-01 issuance is
+  unaffected: Let's Encrypt follows the redirect and does not verify the certificate it
+  lands on, so a brand-new hostname still validates against Traefik's default cert.
 
 ### Prerequisites that live outside the cluster
 Both must be right *before* an Ingress is applied, or the HTTP-01 challenge hangs forever

@@ -6,7 +6,35 @@ metadata:
   namespace: kube-system
 spec:
   failurePolicy: reinstall
-  valuesContent: "deployment:\n  replicas: 2\naffinity:\n  podAntiAffinity:\n    requiredDuringSchedulingIgnoredDuringExecution:\n      - labelSelector:\n          matchLabels:\n            app.kubernetes.io/name:\
-    \ traefik\n        topologyKey: kubernetes.io/hostname\nservice:\n  annotations:\n    metallb.universe.tf/address-pool: ingress-vip\n  spec:\n    # Only nodes running a ready Traefik pod announce the\
-    \ VIP, and\n    # traffic never takes an extra hop to a dead node.\n    externalTrafficPolicy: Local\nadditionalArguments:\n  # Fail fast to a dead backend so the retry happens quickly\n  - \"--serversTransport.forwardingTimeouts.dialTimeout=500ms\"\
-    \n  - \"--entryPoints.websecure.http.middlewares=kube-system-retry@kubernetescrd\"\n  - \"--entryPoints.web.http.middlewares=kube-system-retry@kubernetescrd\""
+  valuesContent: |-
+    deployment:
+      replicas: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: traefik
+            topologyKey: kubernetes.io/hostname
+    service:
+      annotations:
+        metallb.universe.tf/address-pool: ingress-vip
+      spec:
+        # Only nodes running a ready Traefik pod announce the VIP, and
+        # traffic never takes an extra hop to a dead node.
+        externalTrafficPolicy: Local
+    additionalArguments:
+      # Fail fast to a dead backend so the retry happens quickly
+      - "--serversTransport.forwardingTimeouts.dialTimeout=500ms"
+      - "--entryPoints.websecure.http.middlewares=kube-system-retry@kubernetescrd"
+      - "--entryPoints.web.http.middlewares=kube-system-retry@kubernetescrd"
+      # Every public hostname here is issued a certificate by cert-manager, so plain HTTP
+      # has no legitimate use: redirect it instead of serving the app in the clear. This is
+      # cluster-wide on purpose — an app repo cannot forget it, and it cannot become a
+      # per-branch difference in someone's k8s/.
+      #
+      # ACME HTTP-01 keeps working. Let's Encrypt follows the redirect to https and does not
+      # verify the certificate it lands on, so a first issuance still validates against the
+      # self-signed default cert Traefik serves for a host that has none yet.
+      - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entryPoints.web.http.redirections.entryPoint.scheme=https"

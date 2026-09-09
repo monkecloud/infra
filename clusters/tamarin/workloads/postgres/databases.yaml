@@ -35,3 +35,32 @@ spec:
   owner: yarn
   ensure: present
   databaseReclaimPolicy: retain
+---
+# rockon_app/rockon_app_dev already exist: renamed in place from cubesnail/cubesnail_dev
+# (2026-09-09 person->app database migration), not created fresh. This CR just brings them
+# under the same declarative record the other app databases have.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: rockon-app
+  namespace: postgres
+spec:
+  cluster:
+    name: pg
+  name: rockon_app
+  owner: cubesnail
+  ensure: present
+  databaseReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: rockon-app-dev
+  namespace: postgres
+spec:
+  cluster:
+    name: pg
+  name: rockon_app_dev
+  owner: cubesnail
+  ensure: present
+  databaseReclaimPolicy: retain

@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# This is what names the namespace: the base's Namespace object is renamed to this, and
+# everything else is stamped into it.
+namespace: cubesnail-rockon-prod
+resources:
+  - ../base
+  - ../_owners/cubesnail   # cubesnail's Postgres role (DATABASE_URL)
+  - flux.yaml
+  - git-auth.sops.yaml     # read-only deploy key; the repo is private
+  - garage.sops.yaml       # this environment's own bucket, and a key scoped to it
+  # ghcr-creds.sops.yaml doesn't exist yet — the GHCR package is private, so the pod needs
+  # a pull secret, but generating one needs a PAT entered interactively
+  # (./scripts/ghcr-pull-secret.sh cubesnail-rockon-prod). Add this line back in once that
+  # file exists, or the pod sits in ImagePullBackOff.
+  # - ghcr-creds.sops.yaml

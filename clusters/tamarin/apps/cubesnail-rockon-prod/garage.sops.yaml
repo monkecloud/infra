@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: rockon-garage
+    namespace: cubesnail-rockon-prod
+type: Opaque
+stringData:
+    endpoint: ENC[AES256_GCM,data:Yc9VZ1pDX9e2slPAKKsynOfwpaHZuhbqMuED+QYvX8EMBH52rq7wUdJhDg7BBIEWsqI=,iv:fzaKJn/ZYvto/VZtlvusJONHuoTsTZhlZTXavejOPNs=,tag:JG8H67D1QpjGauq4T7SPtA==,type:str]
+    endpoint_external: ENC[AES256_GCM,data:xvgRdfhAe4mK7Mmo9oawwAJWF85ChfzwpVg=,iv:+0m2dwAnVOcq+X7N7ogy6RfdUvYcCDH84byUFr7KoO0=,tag:iSn9hLmNwSONhhbaWJgccA==,type:str]
+    bucket: ENC[AES256_GCM,data:dH0Dcsmej+wf/Y9qWedp0EDZORE9,iv:6R7y78P8KpI3aXCqz7ZZZO2KQwBnvv6F3fGjmh9g9g0=,tag:LBZuZYafbSWJ8CMQ9cYC4g==,type:str]
+    access_key: ENC[AES256_GCM,data:mlnZFtnesP2fJZKylQEySxsQKb2IxB0bl7s=,iv:Y4PEph1gHj9BB7MnrPmf9gQ5i1zLLDAGjZxyue3+Ips=,tag:eTvIC7c9HNqbrN17/Xg7/g==,type:str]
+    secret_key: ENC[AES256_GCM,data:1oJRzxCtNEpbE1H1whzI9JfT5krxOo7XhgaCKPNlS4lzvqN8MxtUljOIelJIOd4+MakANngQHvEpCDr3Xh3QOw==,iv:c2NxLarTfgZn9JsAVESZqcFE+K4elakwbG+qyAsjnMU=,tag:kONJhu+a63t5NqtuA4h1mQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxVE8wOHMvWFU0bFNLbkRm
+            RkVqRjZjYXRoWHpyYVpxaTA0NWl3YzFoT0VNClB6Y3p6L0czOUZTci96bng2MFl2
+            MHpoQmVJNHREOUdOOVBaMi9OWUQ5OHcKLS0tIDF5Rkd3WFNLS3Y5YVNxZjJVOEx0
+            ay9Fa2tHTU1qTzdvMkJnbVN0eWpqK0EK6yYEqc48aE8jY/jloyxK8XwvH7P/IP33
+            Ca15tTnHoC3LBes4Gq4sQpDSNHsMBaVNayMtQ3g/itDM6mOFNqQEQg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1m530e4zxqtaul455myzut6cqqj39ecvtgzdw3uf59j7xdu9he4fs83w9mq
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-09T18:59:27Z"
+    mac: ENC[AES256_GCM,data:fIl9g+/a3eHLc6ldn08+Vb6+Bo8XV2Njj850gcSjmZLtjh6yTLArtky8k3NO2ntMHzfgrqXX7L/854/nMWitbFwRxK80G4MF4XpZgjB47nnXNSoIMgyIFyNUmJ6HH6GvoDINesN3EC41o1nDNI7+lQ5k08JsXasrmYZKzDo2T+Y=,iv:WKT9ftnwTrKq9qq0omZhRHCo6c4zmpVBtjxGUsaoQnM=,tag:TTHuwtZ8jQCxvDIy7GQ0Og==,type:str]
+    version: 3.13.3

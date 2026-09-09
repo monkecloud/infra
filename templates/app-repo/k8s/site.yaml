@@ -46,18 +46,24 @@ spec:
                 secretKeyRef: { name: __OWNER__-pg, key: uri }
             # Garage (S3-compatible). Not AWS: every call needs the endpoint set
             # explicitly and path-style addressing.
+            #
+            # Delete this block if the app does not use object storage — the Secret only
+            # exists in namespaces that asked for a bucket, and a missing one holds the pod
+            # in CreateContainerConfigError. The bucket and its key are per app-environment,
+            # so this is __APP__-garage, not the owner's: dev's key cannot reach prod's
+            # objects. See clusters/tamarin/apps/README.md for provisioning one.
             - name: S3_ENDPOINT
               valueFrom:
-                secretKeyRef: { name: __OWNER__-garage, key: endpoint }
+                secretKeyRef: { name: __APP__-garage, key: endpoint }
             - name: S3_BUCKET
               valueFrom:
-                secretKeyRef: { name: __OWNER__-garage, key: bucket }
+                secretKeyRef: { name: __APP__-garage, key: bucket }
             - name: S3_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: __OWNER__-garage, key: access_key }
+                secretKeyRef: { name: __APP__-garage, key: access_key }
             - name: S3_SECRET_KEY
               valueFrom:
-                secretKeyRef: { name: __OWNER__-garage, key: secret_key }
+                secretKeyRef: { name: __APP__-garage, key: secret_key }
             # Uncomment together with k8s/redis.yaml.
             # - name: REDIS_PASSWORD
             #   valueFrom:

@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# This is what names the namespace: the base's Namespace object is renamed to this, and
+# everything else is stamped into it.
+namespace: cubesnail-site-prod
+resources:
+  - ../base
+  - flux.yaml
+  - git-auth.sops.yaml
+# The GHCR package is public, so no ghcr-creds pull secret is needed. The site talks to
+# nothing else either, so no ../_owners/cubesnail — a namespace only gets credentials it
+# actually uses.

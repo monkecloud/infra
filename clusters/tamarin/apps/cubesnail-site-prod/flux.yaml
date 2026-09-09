@@ -1,0 +1,33 @@
+# The site's own repo, and the Kustomization that applies it. Both live in this namespace
+# because kustomize-controller impersonates the ServiceAccount of the namespace the
+# Kustomization is in — `deployer`, from ../base.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: app
+spec:
+  interval: 1m
+  url: ssh://git@github.com/monkecloud/cubesnail.rip
+  ref:
+    branch: main
+  # A read-only deploy key generated for this repo alone. Nothing in the cluster can write
+  # to GitHub, and the key grants nothing beyond this one repository.
+  secretRef:
+    name: git-auth
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: app
+spec:
+  interval: 5m
+  path: ./k8s
+  prune: true
+  # A bad manifest fails the whole set loudly rather than half-applying it.
+  wait: true
+  timeout: 3m
+  sourceRef:
+    kind: GitRepository
+    name: app
+  targetNamespace: cubesnail-site-prod
+  serviceAccountName: deployer

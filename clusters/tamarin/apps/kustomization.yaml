@@ -7,3 +7,4 @@ resources:
   - yarn-monke-ca-prod
   - yarn-monke-app-prod
   - yarn-monke-app-dev
+  - cubesnail-site-prod

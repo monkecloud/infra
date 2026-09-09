@@ -36,5 +36,12 @@ spec:
       # ACME HTTP-01 keeps working. Let's Encrypt follows the redirect to https and does not
       # verify the certificate it lands on, so a first issuance still validates against the
       # self-signed default cert Traefik serves for a host that has none yet.
+      #
+      # `port` is not optional here. Traefik builds the redirect from the target
+      # entrypoint's own address, which is the in-container :8443, so without this the
+      # Location header says https://host:8443/ — a port the router does not forward, so
+      # every plain-HTTP visitor times out instead of reaching the site. Pin it to the
+      # published 443 (the Service maps 443 -> 8443).
       - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
       - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entryPoints.web.http.redirections.entryPoint.port=:443"

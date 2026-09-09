@@ -16,6 +16,30 @@ spec:
               matchLabels:
                 app.kubernetes.io/name: traefik
             topologyKey: kubernetes.io/hostname
+    ports:
+      web:
+        http:
+          redirections:
+            # Every public hostname here is issued a certificate by cert-manager, so plain
+            # HTTP has no legitimate use: redirect it rather than serving the app in the
+            # clear. Cluster-wide on purpose — an app repo cannot forget it, and it cannot
+            # become a per-branch difference in someone's k8s/.
+            #
+            # This belongs in `ports`, NOT in additionalArguments. The chart renders
+            # `...redirections.entryPoint.to=:{{ ports.websecure.exposedPort }}` — the
+            # published 443. Hand-writing `to=websecure` instead makes Traefik build the
+            # Location header from the target entrypoint's in-container address and emit
+            # https://host:8443/, a port the router does not forward, so every plain-HTTP
+            # visitor hangs. There is no `port` field to correct that with: Traefik rejects
+            # one outright ("field not found, node: port") and crashloops. Both mistakes
+            # were made here on 2026-09-09; the chart value avoids both.
+            #
+            # ACME HTTP-01 keeps working: Let's Encrypt follows the redirect and does not
+            # verify the certificate it lands on, so a first issuance for a brand-new
+            # hostname still validates against Traefik's default cert.
+            entryPoint:
+              to: websecure
+              scheme: https
     service:
       annotations:
         metallb.universe.tf/address-pool: ingress-vip
@@ -28,20 +52,3 @@ spec:
       - "--serversTransport.forwardingTimeouts.dialTimeout=500ms"
       - "--entryPoints.websecure.http.middlewares=kube-system-retry@kubernetescrd"
       - "--entryPoints.web.http.middlewares=kube-system-retry@kubernetescrd"
-      # Every public hostname here is issued a certificate by cert-manager, so plain HTTP
-      # has no legitimate use: redirect it instead of serving the app in the clear. This is
-      # cluster-wide on purpose — an app repo cannot forget it, and it cannot become a
-      # per-branch difference in someone's k8s/.
-      #
-      # ACME HTTP-01 keeps working. Let's Encrypt follows the redirect to https and does not
-      # verify the certificate it lands on, so a first issuance still validates against the
-      # self-signed default cert Traefik serves for a host that has none yet.
-      #
-      # `port` is not optional here. Traefik builds the redirect from the target
-      # entrypoint's own address, which is the in-container :8443, so without this the
-      # Location header says https://host:8443/ — a port the router does not forward, so
-      # every plain-HTTP visitor times out instead of reaching the site. Pin it to the
-      # published 443 (the Service maps 443 -> 8443).
-      - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
-      - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
-      - "--entryPoints.web.http.redirections.entryPoint.port=:443"

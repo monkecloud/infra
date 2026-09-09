@@ -222,9 +222,9 @@ What this layer provides, once, for all of them:
   at `clusters/tamarin/platform-config/cert-manager-issuer.yaml`.
 - Traefik itself is a **k3s-bundled chart** — only its `HelmChartConfig` is ours. See the
   platform README in the repo.
-- **HTTP redirects to HTTPS cluster-wide**, on the `web` entrypoint
-  (`entryPoints.web.http.redirections.entryPoint`) in that same `HelmChartConfig`. A site
-  repo therefore gets the redirect for free and cannot forget it. HTTP-01 issuance is
+- **HTTP redirects to HTTPS cluster-wide**, set as the chart value
+  `ports.web.http.redirections.entryPoint` in that same `HelmChartConfig`. A site repo
+  therefore gets the redirect for free and cannot forget it. HTTP-01 issuance is
   unaffected: Let's Encrypt follows the redirect and does not verify the certificate it
   lands on, so a brand-new hostname still validates against Traefik's default cert.
 
@@ -246,6 +246,19 @@ PDB is the house pattern, so losing a node does not take the site down — see
 `clusters/tamarin/apps/README.md` for the Flux side.
 
 ### Gotchas worth keeping
+- **The HTTP->HTTPS redirect must be a chart value, not an `additionalArguments` flag.**
+  Learned the hard way on 2026-09-09, breaking plain HTTP cluster-wide twice in ten minutes:
+  - `--entryPoints.web.http.redirections.entryPoint.to=websecure` builds the `Location`
+    header from the target entrypoint's *in-container* address and answers
+    `301 -> https://host:8443/`. The router forwards only 80/443, so every plain-HTTP
+    visitor hangs. Traefik is happy; only an end-to-end `curl` shows it.
+  - There is no `port` field to patch that with. Adding one crashloops Traefik with
+    `failed to decode configuration from flags: field not found, node: port`.
+  - The chart value `ports.web.http.redirections.entryPoint: {to: websecure, scheme: https}`
+    renders `to=:{{ ports.websecure.exposedPort }}` — the published 443 — and fails the
+    render if the entrypoint does not exist. Use it.
+  - **Check `%{redirect_url}`, not just `%{http_code}`.** A 301 to an unreachable port looks
+    like success in every status-code-only test.
 - **Renaming an Ingress silently breaks renewal.** cert-manager's `Certificate` is owned by
   the Ingress that requested it, so deleting that Ingress garbage-collects the Certificate —
   but the TLS `Secret` survives, and a new Ingress refuses to adopt it (*"certificate

@@ -7,7 +7,7 @@ metadata:
   name: app
 spec:
   interval: 1m
-  url: ssh://git@github.com/monkecloud/monke-app
+  url: ssh://git@github.com/monkecloud/art-monke
   ref:
     # development. The two branches deploy identical manifests apart from the database key
     # and the hostname.

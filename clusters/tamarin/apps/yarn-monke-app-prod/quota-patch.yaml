@@ -1,0 +1,15 @@
+# monke-app's transcode workers need more room than the shared base/limits.yaml default
+# gives every app. Actual cluster usage is nowhere near the physical ceiling (4 nodes x
+# 4 cores, single digits % used), so this just raises this namespace's own slice rather
+# than touching the shared default other apps still get.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+spec:
+  hard:
+    pods: '25'
+    requests.cpu: '2'
+    requests.memory: 4Gi
+    limits.cpu: '4'
+    limits.memory: 8Gi

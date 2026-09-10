@@ -14,3 +14,8 @@ resources:
   - redis-password.sops.yaml # the cache this repo runs; a different password per namespace
   - db-name.yaml             # names this environment's own Postgres database
   - garage.sops.yaml         # this environment's own bucket, and a key scoped to it
+patches:
+  - path: quota-patch.yaml
+    target:
+      kind: ResourceQuota
+      name: quota
